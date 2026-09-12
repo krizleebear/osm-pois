@@ -1,0 +1,15 @@
+# Binaries, caches and large OSM datasets
+*.pbf
+*.parquet
+*.zip
+*.tar.*
+
+# Local test outputs & fixtures
+tests/fixtures/*.pbf
+tests/*.parquet
+test_places.parquet
+
+# OS and IDE files
+.DS_Store
+.vscode/
+.idea/
