@@ -68,8 +68,13 @@ When modifying or generating code in this repository, you **MUST** follow these 
      2. Add it to `osmium tags-filter` in `azure-pipelines.yml`.
      3. Add it to `raw_features` and category mapping in `scripts/export_pois.sql`.
    * Omitting any of these three steps will cause silent data loss or NULL values.
+8. **Azure DevOps Boolean Parameters & Conditions**:
+   * Do not use template string expansion like `eq('${{ parameters.x }}', 'true')`. In Azure Pipelines, boolean parameters evaluate at template expansion time to C# capitalized strings (`'True'` / `'False'`), causing equality checks against lowercase `'true'` to fail silently.
+   * Always use canonical boolean expression syntax: `eq(parameters.x, true)`.
 
 ---
+
+## 4. Verification & Testing
 
 ### Running Unit Tests & Taxonomy Linter (<100ms)
 
@@ -96,16 +101,38 @@ This will:
 2. Run `scripts/entrypoint.sh` using DuckDB.
 3. Assert row count, schema validity, category assignment, and address coverage.
 
-### Quick Ad-hoc Validation with DuckDB
+### Ad-hoc Validation with DuckDB
 
-When querying generated parquet files, always use non-interactive mode:
+When querying generated parquet files or running SQL scripts, always use non-interactive mode:
 
 ```bash
+# Querying Parquet:
 duckdb -dark-mode -no-stdin -c "SELECT count(*), categories.primary, count(*) FROM 'MC_monaco.places.parquet' GROUP BY ALL LIMIT 10;"
+
+# Executing SQL scripts (NEVER pipe via stdin `< file.sql` when `-no-stdin` is set!):
+duckdb -dark-mode -no-stdin -c ".read tests/test_unit.sql"
 ```
 
 > [!IMPORTANT]
-> Always use `-dark-mode -no-stdin` when invoking `duckdb` in CLI commands or test scripts to prevent terminal color detection timeouts (> 5s).
+> - Always use `-dark-mode -no-stdin` when invoking `duckdb` in CLI commands or test scripts to prevent terminal color detection timeouts (> 5s).
+> - Because `-no-stdin` disables standard input, piping (`duckdb -no-stdin < script.sql`) fails silently. Always use `-c ".read script.sql"`.
+
+### Querying Official Overture Data Directly (S3 Streaming)
+
+For coverage benchmarks or taxonomy comparisons against official Overture releases, stream directly via DuckDB without downloading full dumps:
+
+```sql
+-- Configure anonymous access to Overture public S3 bucket
+CREATE SECRET overture (TYPE S3, KEY_ID '', SECRET '', REGION 'us-west-2');
+
+-- Leverage bbox metadata / part files for high-throughput spatial pruning (e.g. Germany is in part-00010 & part-00011):
+SELECT count(*), categories.primary
+FROM read_parquet('s3://overturemaps-us-west-2/release/2026-08-19.0/theme=places/type=place/*')
+WHERE bbox.xmin >= 5.86 AND bbox.xmax <= 15.04
+  AND bbox.ymin >= 47.27 AND bbox.ymax <= 55.06
+  AND addresses[1].country = 'DE'
+GROUP BY ALL;
+```
 
 ---
 
