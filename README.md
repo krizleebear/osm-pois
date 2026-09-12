@@ -45,3 +45,9 @@ docker run --rm \
   ghcr.io/krizleebear/osm2parquet:v1.0.9 \
   ./scripts/entrypoint.sh MC_monaco.pois.pbf places.parquet MC
 ```
+
+## 🙏 Attribution & Licensing
+
+- **Category Mapping Tables**: The initial mapping files (`mappings/overture_to_osm_categories.csv` and `mappings/overture_categories.csv`) are derived from the [Cadence Maps](https://gitlab.com/geometalab/bafs25-cadencemaps) project (OST / Eastern Switzerland University of Applied Sciences, by Fadil Smajilbasic, Matthias Hersche, Nils Robin-Grob) and are licensed under the [MIT License](mappings/README.md).
+- **OpenStreetMap Data**: Licensed under the [Open Data Commons Open Database License (ODbL 1.0)](https://opendatacommons.org/licenses/odbl/) © OpenStreetMap contributors.
+- **Overture Maps Schema**: Schema and category taxonomy concepts follow the open specifications of the [Overture Maps Foundation](https://overturemaps.org/).
