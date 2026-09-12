@@ -31,88 +31,61 @@ SELECT DISTINCT ON (primary_key, primary_val)
 FROM category_rules
 ORDER BY primary_key, primary_val, has_subtag ASC, overture_cat ASC;
 
--- Extract Raw Features from OSM PBF
+-- Extract Raw Features from Osmium GeoJSON stream (reconstructs 100% of points, ways, and polygons)
 CREATE TEMP TABLE raw_features AS
 SELECT 
-    'osm:node/' || COALESCE(osm_id, '') AS id,
-    COALESCE(name, brand, operator) AS name,
-    name_en,
-    name_de,
-    amenity,
-    religion,
-    denomination,
-    cuisine,
-    shop,
-    tourism,
-    leisure,
-    office,
-    craft,
-    healthcare,
-    historic,
-    sport,
-    aeroway,
-    railway,
-    station,
-    operator,
-    brand,
-    brand_wikidata,
-    addr_street,
-    addr_housenumber,
-    addr_postcode,
-    addr_city,
-    COALESCE(website, contact_website) AS website,
-    COALESCE(phone, contact_phone) AS phone,
-    COALESCE(email, contact_email) AS email,
-    geom AS geometry
-FROM ST_Read(
-    '__INPUT_PBF__',
-    layer = 'points',
-    open_options = ['CONFIG_FILE=__REPO_ROOT__/config/osmconf.ini']
-)
-WHERE (name IS NOT NULL OR brand IS NOT NULL OR operator IS NOT NULL)
-  AND (amenity IS NOT NULL OR shop IS NOT NULL OR tourism IS NOT NULL OR leisure IS NOT NULL OR office IS NOT NULL OR craft IS NOT NULL OR healthcare IS NOT NULL OR historic IS NOT NULL OR railway IS NOT NULL OR aeroway IS NOT NULL)
-
-UNION ALL
-
-SELECT 
-    'osm:way/' || COALESCE(osm_way_id, osm_id, '') AS id,
-    COALESCE(name, brand, operator) AS name,
-    name_en,
-    name_de,
-    amenity,
-    religion,
-    denomination,
-    cuisine,
-    shop,
-    tourism,
-    leisure,
-    office,
-    craft,
-    healthcare,
-    historic,
-    sport,
-    aeroway,
-    railway,
-    station,
-    operator,
-    brand,
-    brand_wikidata,
-    addr_street,
-    addr_housenumber,
-    addr_postcode,
-    addr_city,
-    COALESCE(website, contact_website) AS website,
-    COALESCE(phone, contact_phone) AS phone,
-    COALESCE(email, contact_email) AS email,
-    CASE WHEN ST_IsValid(geom) THEN ST_PointOnSurface(geom) ELSE NULL END AS geometry
-FROM ST_Read(
-    '__INPUT_PBF__',
-    layer = 'multipolygons',
-    open_options = ['CONFIG_FILE=__REPO_ROOT__/config/osmconf.ini']
-)
-WHERE (name IS NOT NULL OR brand IS NOT NULL OR operator IS NOT NULL)
-  AND (amenity IS NOT NULL OR shop IS NOT NULL OR tourism IS NOT NULL OR leisure IS NOT NULL OR office IS NOT NULL OR craft IS NOT NULL OR healthcare IS NOT NULL OR historic IS NOT NULL OR railway IS NOT NULL OR aeroway IS NOT NULL)
-  AND ST_IsValid(geom);
+    'osm:' || json_extract_string(properties, '$.@type') || '/' || json_extract_string(properties, '$.@id') AS id,
+    COALESCE(json_extract_string(properties, '$.name'), json_extract_string(properties, '$.brand'), json_extract_string(properties, '$.operator')) AS name,
+    json_extract_string(properties, '$.name:en') AS name_en,
+    json_extract_string(properties, '$.name:de') AS name_de,
+    json_extract_string(properties, '$.amenity') AS amenity,
+    json_extract_string(properties, '$.religion') AS religion,
+    json_extract_string(properties, '$.denomination') AS denomination,
+    json_extract_string(properties, '$.cuisine') AS cuisine,
+    json_extract_string(properties, '$.shop') AS shop,
+    json_extract_string(properties, '$.tourism') AS tourism,
+    json_extract_string(properties, '$.leisure') AS leisure,
+    json_extract_string(properties, '$.office') AS office,
+    json_extract_string(properties, '$.craft') AS craft,
+    json_extract_string(properties, '$.healthcare') AS healthcare,
+    json_extract_string(properties, '$.historic') AS historic,
+    json_extract_string(properties, '$.sport') AS sport,
+    json_extract_string(properties, '$.aeroway') AS aeroway,
+    json_extract_string(properties, '$.railway') AS railway,
+    json_extract_string(properties, '$.station') AS station,
+    json_extract_string(properties, '$.operator') AS operator,
+    json_extract_string(properties, '$.brand') AS brand,
+    json_extract_string(properties, '$.brand:wikidata') AS brand_wikidata,
+    json_extract_string(properties, '$.addr:street') AS addr_street,
+    json_extract_string(properties, '$.addr:housenumber') AS addr_housenumber,
+    json_extract_string(properties, '$.addr:postcode') AS addr_postcode,
+    json_extract_string(properties, '$.addr:city') AS addr_city,
+    COALESCE(json_extract_string(properties, '$.website'), json_extract_string(properties, '$.contact:website')) AS website,
+    COALESCE(json_extract_string(properties, '$.phone'), json_extract_string(properties, '$.contact:phone')) AS phone,
+    COALESCE(json_extract_string(properties, '$.email'), json_extract_string(properties, '$.contact:email')) AS email,
+    CASE 
+        WHEN ST_GeometryType(ST_GeomFromGeoJSON(geometry)) IN ('POLYGON', 'MULTIPOLYGON') 
+        THEN ST_PointOnSurface(ST_GeomFromGeoJSON(geometry)) 
+        ELSE ST_GeomFromGeoJSON(geometry) 
+    END AS geometry
+FROM read_json('__INPUT_JSONL__', 
+               format='newline_delimited', 
+               columns={'geometry': 'JSON', 'properties': 'JSON'})
+WHERE (json_extract_string(properties, '$.name') IS NOT NULL 
+       OR json_extract_string(properties, '$.brand') IS NOT NULL 
+       OR json_extract_string(properties, '$.operator') IS NOT NULL)
+  AND (json_extract_string(properties, '$.amenity') IS NOT NULL 
+       OR json_extract_string(properties, '$.shop') IS NOT NULL 
+       OR json_extract_string(properties, '$.tourism') IS NOT NULL 
+       OR json_extract_string(properties, '$.leisure') IS NOT NULL 
+       OR json_extract_string(properties, '$.office') IS NOT NULL 
+       OR json_extract_string(properties, '$.craft') IS NOT NULL 
+       OR json_extract_string(properties, '$.healthcare') IS NOT NULL 
+       OR json_extract_string(properties, '$.historic') IS NOT NULL 
+       OR json_extract_string(properties, '$.railway') IS NOT NULL 
+       OR json_extract_string(properties, '$.aeroway') IS NOT NULL)
+  AND geometry IS NOT NULL
+  AND ST_IsValid(ST_GeomFromGeoJSON(geometry));
 
 -- Map Categories and Format into Overture Places GeoParquet
 COPY (
