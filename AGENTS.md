@@ -71,11 +71,21 @@ When modifying or generating code in this repository, you **MUST** follow these 
 
 ---
 
-## 4. Local Development & Testing Workflow
+### Running Unit Tests & Taxonomy Linter (<100ms)
+
+Verify mapping consistency and category resolution logic without needing PBF files:
+
+```bash
+./tests/run_unit_tests.sh
+```
+
+This will:
+1. Lint `mappings/overture_to_osm_categories.csv` against `mappings/overture_categories.csv` (asserts 0 orphaned categories, 0 malformed rows).
+2. Execute 33+ deterministic mock test cases against the core SQL categorization logic.
 
 ### Running the Integration Test
 
-Always verify your changes by executing the local test suite:
+Verify end-to-end PBF-to-GeoParquet conversion:
 
 ```bash
 ./tests/test_conversion.sh

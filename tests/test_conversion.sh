@@ -4,6 +4,10 @@ set -e
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
+# Run fast unit tests & taxonomy linter first (< 100ms)
+"$SCRIPT_DIR/run_unit_tests.sh"
+echo ""
+
 echo "=== Running OSM-POIS Local Integration Test ==="
 
 TEST_PBF="$REPO_ROOT/tests/fixtures/monaco-sample.osm.pbf"
