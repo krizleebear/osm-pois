@@ -42,8 +42,11 @@ cleanup() {
 }
 trap cleanup EXIT INT TERM
 
+BUILD_VERSION="${BUILD_VERSION:-${BUILD_BUILDNUMBER:-${BUILD_NUMBER:-$(git describe --tags --always 2>/dev/null || echo "dev")}}}"
+EXPORT_TIMESTAMP="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
+
 # Stream Osmium export through named pipe directly into DuckDB (zero intermediate disk I/O)
-(set -o pipefail; osmium export "$INPUT_PBF" --geometry-types=point,polygon --attributes=type,id --output-format=geojsonseq | tr -d '\036' > "$TMP_FIFO") &
+(set -o pipefail; osmium export "$INPUT_PBF" --geometry-types=point,polygon --attributes=type,id,version,timestamp --output-format=geojsonseq | tr -d '\036' > "$TMP_FIFO") &
 OSMIUM_PID=$!
 
 sed \
@@ -51,6 +54,8 @@ sed \
   -e "s|__OUTPUT_PARQUET__|${OUTPUT_PARQUET}|g" \
   -e "s|__COUNTRY_CODE__|${COUNTRY_CODE}|g" \
   -e "s|__REPO_ROOT__|${REPO_ROOT}|g" \
+  -e "s|__BUILD_VERSION__|${BUILD_VERSION}|g" \
+  -e "s|__EXPORT_TIMESTAMP__|${EXPORT_TIMESTAMP}|g" \
   "$SCRIPT_DIR/export_pois.sql" > "$TMP_SQL"
 
 duckdb -dark-mode -no-stdin -c ".read $TMP_SQL"

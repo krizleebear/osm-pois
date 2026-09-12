@@ -130,8 +130,8 @@ To ensure consistent pipeline execution, reproducible releases, and clean Git wo
     - Large external file downloads (such as Geofabrik PBF extracts) must specify stall timeouts (`--speed-limit 10240 --speed-time 30`), resume capabilities (`--continue-at -`), and emit lightweight background progress heartbeats to prevent silent runner hangs.
 25. **1-Pass PBF Extraction & Zero-Disk Stream Performance Invariant**:
     - Large raw PBF files must be scanned only ONCE. Avoid multiple redundant reading passes over multi-gigabyte PBF extracts. Use `osmium export` or `osmium tags-filter` streaming directly through named pipes (`mkfifo`) into DuckDB to eliminate intermediate disk I/O.
-26. **Osmium Export ID Configuration Invariant**:
-    - `osmium export` omits `@id` attributes by default unless `--config` or `-a type,id` is explicitly passed. All place export commands must pass `-a type,id` to preserve `osm_id`.
+26. **Osmium Export ID & Provenance Configuration Invariant**:
+    - `osmium export` omits `@id`, `@version`, and `@timestamp` attributes by default unless `--config` or `-a type,id,version,timestamp` is explicitly passed. All place export commands must pass `-a type,id,version,timestamp` (or `--attributes=type,id,version,timestamp`) to preserve `osm_id`, feature version, and edit timestamps for provenance.
 27. **Stream File Format Conventions (`.geojsonseq` vs `.jsonl`) & Vectorized DuckDB Ingestion**:
     - `*.geojsonseq`: Strictly adheres to RFC 8142 (GeoJSON Text Sequences) where each line is a full standard GeoJSON Feature object (`{"type": "Feature", "geometry": {...}, "properties": {...}}`). Designed for spatial streaming.
     - `*.jsonl`: Formatted as newline-delimited flattened tabular records. Designed as high-throughput, columnar-ready ETL streams for direct vectorized ingestion via DuckDB `read_json()`. Tabular JSONL streams must retain `.jsonl` and never be misnamed `.geojsonseq` as they lack GeoJSON Feature wrappers.

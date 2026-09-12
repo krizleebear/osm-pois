@@ -1064,11 +1064,31 @@ stages:
         releaseNotesSource: 'inline'
         releaseNotesInline: |
           Automated worldwide OpenStreetMap (OSM) to Overture Places-compatible GeoParquet release.
-          
+
           - **Build:** `$(Build.BuildNumber)`
           - **Commit:** `$(Build.SourceVersion)`
-          - **Schema:** Overture Maps `theme=places / type=place`
-          - **License:** Open Database License (ODbL 1.0) © OpenStreetMap contributors
+          - **Schema:** [Overture Maps Places](https://overturemaps.org/schema/) (`theme=places / type=place`)
+
+          ---
+
+          ### 📜 Attribution & Licensing Notice
+
+          This dataset contains information from **OpenStreetMap**, which is made available under the **Open Database License (ODbL) 1.0**.
+
+          - **Data Origin & Copyright:** © [OpenStreetMap contributors](https://www.openstreetmap.org/copyright)
+          - **Data License:** [Open Data Commons Open Database License (ODbL) 1.0](https://opendatacommons.org/licenses/odbl/)
+          - **Schema Specification:** [Overture Maps Foundation](https://overturemaps.org/) (`theme=places / type=place`)
+          - **Taxonomy Mappings:** Derived from the [Cadence Maps](https://gitlab.com/geometalab/bafs25-cadencemaps) project (MIT License)
+          - **Compiler Pipeline:** [osm-pois](https://github.com/krizleebear/osm-pois)
+
+          #### Downstream Attribution Requirements
+          Any public use, publication, display, or redistribution of these GeoParquet files or derivative works must clearly and prominently credit OpenStreetMap:
+          > **"Data © OpenStreetMap contributors, available under the Open Database License (ODbL)."**
+          >
+          > When using these datasets electronically, you must include a hyperlink directly to [https://www.openstreetmap.org/copyright](https://www.openstreetmap.org/copyright) and [https://opendatacommons.org/licenses/odbl/](https://opendatacommons.org/licenses/odbl/).
+
+          #### Embedded Metadata
+          Each `.places.parquet` file contains embedded provenance and licensing metadata in its Parquet header/footer (`attribution`, `license`, `source`, `origin`, `compiler`, `country_code`, `exported_at`), as well as feature-level provenance in the `sources` array (`dataset: 'OpenStreetMap'`, `license: 'ODbL-1.0'`, `record_id`, `update_time`).
         assets: '$(Pipeline.Workspace)/release_assets/**/*.parquet'
         addChangeLog: false
 

@@ -35,6 +35,12 @@ ORDER BY primary_key, primary_val, has_subtag ASC, overture_cat ASC;
 CREATE TEMP TABLE raw_features AS
 SELECT 
     'osm:' || json_extract_string(properties, '$.@type') || '/' || json_extract_string(properties, '$.@id') AS id,
+    TRY_CAST(json_extract_string(properties, '$.@version') AS INTEGER) AS osm_version,
+    CASE 
+        WHEN json_extract_string(properties, '$.@timestamp') IS NOT NULL 
+        THEN strftime(to_timestamp(TRY_CAST(json_extract_string(properties, '$.@timestamp') AS BIGINT)), '%Y-%m-%dT%H:%M:%SZ') 
+        ELSE NULL 
+    END AS osm_timestamp,
     COALESCE(json_extract_string(properties, '$.name'), json_extract_string(properties, '$.brand'), json_extract_string(properties, '$.operator')) AS name,
     json_extract_string(properties, '$.name:en') AS name_en,
     json_extract_string(properties, '$.name:de') AS name_de,
@@ -199,13 +205,13 @@ COPY (
             'dataset': 'OpenStreetMap',
             'license': 'ODbL-1.0',
             'record_id': id,
-            'update_time': NULL,
+            'update_time': osm_timestamp,
             'confidence': 1.0::DOUBLE
         }] AS sources,
         'active' AS operating_status,
         main_category AS basic_category,
         {'primary': main_category, 'hierarchy': COALESCE(t.hierarchy, [main_category]), 'alternates': CAST([] AS VARCHAR[])} AS taxonomy,
-        1 AS version,
+        COALESCE(osm_version, 1) AS version,
         {
             'xmin': ST_X(geometry),
             'xmax': ST_X(geometry),
@@ -217,4 +223,23 @@ COPY (
         'place' AS type
     FROM categorized c
     LEFT JOIN overture_taxonomy t ON c.main_category = t.overture_cat
-) TO '__OUTPUT_PARQUET__' (FORMAT PARQUET, COMPRESSION 'ZSTD');
+) TO '__OUTPUT_PARQUET__' (
+    FORMAT PARQUET, 
+    COMPRESSION 'ZSTD',
+    KV_METADATA {
+        'source': 'OpenStreetMap',
+        'origin': 'OpenStreetMap (https://www.openstreetmap.org)',
+        'dataset': 'OpenStreetMap POIs (Overture Places Schema Compatible)',
+        'attribution': '© OpenStreetMap contributors',
+        'attribution_url': 'https://www.openstreetmap.org/copyright',
+        'license': 'ODbL-1.0 (https://opendatacommons.org/licenses/odbl/)',
+        'license_url': 'https://opendatacommons.org/licenses/odbl/',
+        'copyright': 'Data © OpenStreetMap contributors, licensed under Open Data Commons Open Database License 1.0 (ODbL)',
+        'schema': 'Overture Maps theme=places / type=place',
+        'schema_url': 'https://overturemaps.org/schema/',
+        'compiler': 'osm-pois (https://github.com/krizleebear/osm-pois)',
+        'compiler_version': '__BUILD_VERSION__',
+        'country_code': '__COUNTRY_CODE__',
+        'exported_at': '__EXPORT_TIMESTAMP__'
+    }
+);
