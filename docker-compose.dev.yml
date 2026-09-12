@@ -11,6 +11,18 @@ services:
       TZ: Europe/Berlin
       GH_TOKEN: ${GH_TOKEN:-${GITHUB_TOKEN:-}}
       GITHUB_TOKEN: ${GITHUB_TOKEN:-${GH_TOKEN:-}}
+      TERM_PROGRAM: ${TERM_PROGRAM:-}
+      TERM_PROGRAM_VERSION: ${TERM_PROGRAM_VERSION:-}
+      LC_TERMINAL: ${LC_TERMINAL:-}
+      LC_TERMINAL_VERSION: ${LC_TERMINAL_VERSION:-}
+      ITERM_SESSION_ID: ${ITERM_SESSION_ID:-}
+      COLORTERM: ${COLORTERM:-truecolor}
+      DISPLAY: ${DISPLAY:-host.docker.internal:0}
+      MAC_CLIPBOARD_HOST: host.docker.internal
+      MAC_CLIPBOARD_PORT: "4215"
+      MAC_CLIPBOARD_TOKEN: ${MAC_CLIPBOARD_TOKEN:-}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     volumes:
       - .:/app
       - ~/.gitconfig:/home/ubuntu/.gitconfig:ro

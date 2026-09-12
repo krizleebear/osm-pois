@@ -1,0 +1,35 @@
+#!/usr/bin/env bash
+# macOS Clipboard Bridge Shim for xclip in Docker DevContainer (Images Only)
+set -eo pipefail
+
+HOST_BRIDGE="${MAC_CLIPBOARD_HOST:-host.docker.internal}:${MAC_CLIPBOARD_PORT:-4215}"
+TOKEN="${MAC_CLIPBOARD_TOKEN:-}"
+if [ -z "$TOKEN" ] && [ -f "$HOME/.mac_clipboard_token" ]; then
+  TOKEN="$(head -n 1 "$HOME/.mac_clipboard_token" 2>/dev/null || true)"
+fi
+
+AUTH_HEADER=()
+if [ -n "$TOKEN" ]; then
+  AUTH_HEADER=(-H "X-Clipboard-Token: $TOKEN")
+fi
+
+# Check targets / MIME types
+if [[ "$*" == *"-t TARGETS"* ]] || [[ "$*" == *"-target TARGETS"* ]]; then
+  if curl -s -f --connect-timeout 0.4 "${AUTH_HEADER[@]}" "http://$HOST_BRIDGE/targets" 2>/dev/null; then
+    exit 0
+  fi
+fi
+
+# Check image output
+if [[ "$*" == *"image/"* ]] && [[ "$*" == *"-o"* ]]; then
+  if curl -s -f --connect-timeout 0.8 "${AUTH_HEADER[@]}" "http://$HOST_BRIDGE/image" 2>/dev/null; then
+    exit 0
+  fi
+fi
+
+# Fallback to system xclip if available and DISPLAY is set
+if [ -x /usr/bin/xclip ] && [ -n "${DISPLAY:-}" ]; then
+  exec /usr/bin/xclip "$@"
+fi
+
+exit 1

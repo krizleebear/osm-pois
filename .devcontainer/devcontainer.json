@@ -4,6 +4,7 @@
   "service": "dev",
   "workspaceFolder": "/app",
   "shutdownAction": "stopCompose",
+  "initializeCommand": "python3 scripts/mac_clipboard_server.py --daemon || true",
   "customizations": {
     "vscode": {
       "settings": {

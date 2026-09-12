@@ -22,7 +22,10 @@ RUN apt-get update && \
       tar \
       unzip \
       tzdata \
-      osmium-tool && \
+      osmium-tool \
+      xclip \
+      xsel \
+      wl-clipboard && \
     ln -fs /usr/share/zoneinfo/Europe/Berlin /etc/localtime && \
     dpkg-reconfigure --frontend noninteractive tzdata && \
     rm -rf /var/lib/apt/lists/*
@@ -87,6 +90,10 @@ RUN cp -r /tmp/.duckdb-ext-cache /home/ubuntu/.duckdb && \
     rm -rf /tmp/.duckdb-ext-cache && \
     printf "INSTALL spatial;\nLOAD spatial;\n" > /home/ubuntu/.duckdbrc && \
     chown ubuntu:ubuntu /home/ubuntu/.duckdbrc
+
+# 5. Install clipboard bridge shims for macOS / Docker host clipboard integration
+COPY .devcontainer/bin/* /usr/local/bin/
+RUN chmod +x /usr/local/bin/xclip /usr/local/bin/wl-paste
 
 USER ubuntu
 WORKDIR /app
