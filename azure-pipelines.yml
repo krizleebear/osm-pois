@@ -21,7 +21,7 @@ parameters:
 - name: publishGitHubRelease
   displayName: 'Publish GitHub Release with GeoParquet assets'
   type: boolean
-  default: false
+  default: true
 - name: skipOsmiumFilter
   displayName: 'Skip Osmium filtering (use pre-filtered pois.pbf pipeline artifacts)'
   type: boolean
@@ -999,7 +999,7 @@ stages:
 - stage: release
   displayName: 'Publish GitHub Release'
   dependsOn: convert
-  condition: and(succeeded(), eq('${{ parameters.publishGitHubRelease }}', 'true'))
+  condition: and(succeeded(), eq(parameters.publishGitHubRelease, true))
   jobs:
   - job: release
     displayName: 'Create GitHub Release with GeoParquet Assets'
