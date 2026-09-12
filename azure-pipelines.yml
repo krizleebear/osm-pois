@@ -940,7 +940,7 @@ stages:
 
             echo "[INFO] Found input PBF: $INPUT_PBF"
             echo "[INFO] Filtering POI features (amenity, shop, tourism, leisure, etc.) via osmium..."
-            osmium tags-filter "$INPUT_PBF" nwr/amenity nwr/shop nwr/tourism nwr/leisure nwr/office nwr/craft nwr/healthcare nwr/historic nwr/aeroway nwr/cuisine -o "$FILTERED_PBF" --overwrite
+            osmium tags-filter "$INPUT_PBF" nwr/amenity nwr/shop nwr/tourism nwr/leisure nwr/office nwr/craft nwr/healthcare nwr/historic nwr/aeroway nwr/cuisine nwr/railway=station,halt -o "$FILTERED_PBF" --overwrite
 
             echo "[INFO] Reclaiming disk space: removing raw input PBF immediately..."
             rm -rf "osm-data-$(OSM_REGION)" "$(OSM_REGION).osm.pbf"

@@ -47,6 +47,8 @@ SELECT
     historic,
     sport,
     aeroway,
+    railway,
+    station,
     operator,
     brand,
     brand_wikidata,
@@ -64,7 +66,7 @@ FROM ST_Read(
     open_options = ['CONFIG_FILE=__REPO_ROOT__/config/osmconf.ini']
 )
 WHERE (name IS NOT NULL OR brand IS NOT NULL OR operator IS NOT NULL)
-  AND (amenity IS NOT NULL OR shop IS NOT NULL OR tourism IS NOT NULL OR leisure IS NOT NULL OR office IS NOT NULL OR craft IS NOT NULL OR healthcare IS NOT NULL OR historic IS NOT NULL)
+  AND (amenity IS NOT NULL OR shop IS NOT NULL OR tourism IS NOT NULL OR leisure IS NOT NULL OR office IS NOT NULL OR craft IS NOT NULL OR healthcare IS NOT NULL OR historic IS NOT NULL OR railway IS NOT NULL OR aeroway IS NOT NULL)
 
 UNION ALL
 
@@ -84,6 +86,8 @@ SELECT
     historic,
     sport,
     aeroway,
+    railway,
+    station,
     operator,
     brand,
     brand_wikidata,
@@ -101,7 +105,7 @@ FROM ST_Read(
     open_options = ['CONFIG_FILE=__REPO_ROOT__/config/osmconf.ini']
 )
 WHERE (name IS NOT NULL OR brand IS NOT NULL OR operator IS NOT NULL)
-  AND (amenity IS NOT NULL OR shop IS NOT NULL OR tourism IS NOT NULL OR leisure IS NOT NULL OR office IS NOT NULL OR craft IS NOT NULL OR healthcare IS NOT NULL OR historic IS NOT NULL)
+  AND (amenity IS NOT NULL OR shop IS NOT NULL OR tourism IS NOT NULL OR leisure IS NOT NULL OR office IS NOT NULL OR craft IS NOT NULL OR healthcare IS NOT NULL OR historic IS NOT NULL OR railway IS NOT NULL OR aeroway IS NOT NULL)
   AND ST_IsValid(geom);
 
 -- Map Categories and Format into Overture Places GeoParquet
@@ -117,7 +121,14 @@ COPY (
                        AND r.sub_key = 'cuisine' AND r.sub_val = split_part(f.cuisine, ';', 1) 
                      LIMIT 1)
                 END,
-                -- 2. Primary tag matches from deterministic rule table
+                -- 2. Transit station subtag match (e.g. railway=station,station=subway -> light_rail_and_subway_station)
+                CASE WHEN f.railway = 'station' AND f.station IS NOT NULL THEN
+                    (SELECT r.overture_cat FROM category_rules r 
+                     WHERE r.primary_key = 'railway' AND r.primary_val = 'station' 
+                       AND r.sub_key = 'station' AND r.sub_val = f.station 
+                     LIMIT 1)
+                END,
+                -- 3. Primary tag matches from deterministic rule table
                 (SELECT r.overture_cat FROM primary_rules r WHERE r.primary_key = 'amenity' AND r.primary_val = f.amenity),
                 (SELECT r.overture_cat FROM primary_rules r WHERE r.primary_key = 'shop' AND r.primary_val = f.shop),
                 (SELECT r.overture_cat FROM primary_rules r WHERE r.primary_key = 'tourism' AND r.primary_val = f.tourism),
@@ -126,6 +137,8 @@ COPY (
                 (SELECT r.overture_cat FROM primary_rules r WHERE r.primary_key = 'craft' AND r.primary_val = f.craft),
                 (SELECT r.overture_cat FROM primary_rules r WHERE r.primary_key = 'healthcare' AND r.primary_val = f.healthcare),
                 (SELECT r.overture_cat FROM primary_rules r WHERE r.primary_key = 'historic' AND r.primary_val = f.historic),
+                (SELECT r.overture_cat FROM primary_rules r WHERE r.primary_key = 'railway' AND r.primary_val = f.railway),
+                (SELECT r.overture_cat FROM primary_rules r WHERE r.primary_key = 'aeroway' AND r.primary_val = f.aeroway),
                 f.amenity,
                 f.shop,
                 f.tourism,

@@ -2119,3 +2119,13 @@ banks;office=bank
 employment_agencies;office=employment_agency
 hospital;healthcare=hospital
 school;office=educational_institution
+train_station;railway=station
+train_station;railway=halt
+light_rail_and_subway_station;railway=station,station=subway
+light_rail_and_subway_station;railway=station,station=light_rail
+bus_station;amenity=bus_station
+beer_garden;amenity=biergarten
+mountain_hut;tourism=alpine_hut
+mountain_hut;tourism=wilderness_hut
+civic_organization;office=association
+civic_organization;office=foundation
