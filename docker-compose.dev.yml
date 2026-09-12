@@ -1,0 +1,30 @@
+services:
+  dev:
+    image: osm-pois:dev
+    build:
+      context: .
+      dockerfile: .devcontainer/Dockerfile
+      args:
+        CACHEBUST_AGY: ${CACHEBUST_AGY:-}
+    environment:
+      TERM: xterm-256color
+      TZ: Europe/Berlin
+      GH_TOKEN: ${GH_TOKEN:-${GITHUB_TOKEN:-}}
+      GITHUB_TOKEN: ${GITHUB_TOKEN:-${GH_TOKEN:-}}
+    volumes:
+      - .:/app
+      - ~/.gitconfig:/home/ubuntu/.gitconfig:ro
+      - ~/.gemini:/home/ubuntu/.gemini
+      - ~/.config/gh:/home/ubuntu/.config/gh
+      - opencode-config:/home/ubuntu/.config/opencode
+      - opencode-data:/home/ubuntu/.local/share/opencode
+      - opencode-cache:/home/ubuntu/.cache
+    working_dir: /app
+    entrypoint: ["/bin/bash"]
+    stdin_open: true
+    tty: true
+
+volumes:
+  opencode-config:
+  opencode-data:
+  opencode-cache:
