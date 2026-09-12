@@ -389,17 +389,65 @@
       opacity: 0;
     }
 
-    /* Quick jump pills */
-    .quick-jumps {
+    /* Full-window Drag & Drop Overlay */
+    .full-drop-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(15, 23, 42, 0.88);
+      backdrop-filter: blur(6px);
+      z-index: 10000;
       display: flex;
-      flex-wrap: wrap;
-      gap: 6px;
+      align-items: center;
+      justify-content: center;
+      pointer-events: none;
+      opacity: 0;
+      transition: opacity 0.2s ease;
+    }
+
+    .full-drop-overlay.active {
+      opacity: 1;
+      pointer-events: all;
+    }
+
+    .drop-overlay-box {
+      border: 3px dashed #38bdf8;
+      border-radius: 20px;
+      padding: 48px 64px;
+      background: rgba(30, 41, 59, 0.95);
+      text-align: center;
+      box-shadow: 0 20px 40px rgba(0, 0, 0, 0.6);
+      transform: scale(0.95);
+      transition: transform 0.2s ease;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+
+    .full-drop-overlay.active .drop-overlay-box {
+      transform: scale(1);
     }
   </style>
 </head>
 <body>
 
 <div id="app">
+  <!-- Full-Window Drag & Drop Overlay -->
+  <div id="fullDropOverlay" class="full-drop-overlay">
+    <div class="drop-overlay-box">
+      <svg width="56" height="56" viewBox="0 0 24 24" fill="none" stroke="#38bdf8" stroke-width="2">
+        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+        <polyline points="17 8 12 3 7 8"></polyline>
+        <line x1="12" y1="3" x2="12" y2="15"></line>
+      </svg>
+      <div style="font-size: 1.35rem; font-weight: 700; color: #f8fafc; margin-top: 14px;">
+        Drop .places.parquet file anywhere
+      </div>
+      <div style="font-size: 0.88rem; color: #94a3b8; margin-top: 6px;">
+        Direct client-side ingestion &amp; inspection via DuckDB-Wasm
+      </div>
+    </div>
+  </div>
+
   <!-- Header -->
   <header>
     <div class="header-left">
@@ -448,8 +496,8 @@
         </div>
         
         <div id="dropZone" class="drop-zone">
-          <div class="drop-zone-text">Drag & drop <code>.places.parquet</code> here</div>
-          <div class="drop-zone-sub">or use preset / load button above</div>
+          <div class="drop-zone-text">Drop <code>.places.parquet</code> anywhere</div>
+          <div class="drop-zone-sub">on this page or click to browse</div>
         </div>
 
         <div style="display: flex; gap: 6px; margin-top: 6px;">
@@ -459,6 +507,34 @@
             <option value="DE_germany.places.parquet">Germany (DE_germany.places.parquet)</option>
           </select>
           <button id="loadPresetBtn" class="btn btn-sm primary">Load</button>
+        </div>
+
+        <!-- Dataset Provenance & Metadata Card -->
+        <div id="datasetMetaCard" class="inspector-card" style="display: none; margin-top: 8px;">
+          <div style="font-weight: 700; color: #f8fafc; margin-bottom: 4px; border-bottom: 1px solid #334155; padding-bottom: 3px; display: flex; justify-content: space-between;">
+            <span>Dataset Provenance</span>
+            <span id="metaCountryCode" style="color: #38bdf8; font-weight: 600;"></span>
+          </div>
+          <div class="inspector-row">
+            <span class="inspector-key">Compiler Version:</span>
+            <span id="metaCompilerVersion" class="inspector-val">--</span>
+          </div>
+          <div class="inspector-row">
+            <span class="inspector-key">Exported:</span>
+            <span id="metaExportedAt" class="inspector-val">--</span>
+          </div>
+          <div class="inspector-row">
+            <span class="inspector-key">Schema:</span>
+            <span id="metaSchema" class="inspector-val">--</span>
+          </div>
+          <div class="inspector-row">
+            <span class="inspector-key">License:</span>
+            <span id="metaLicense" class="inspector-val">ODbL-1.0</span>
+          </div>
+          <div class="inspector-row">
+            <span class="inspector-key">Attribution:</span>
+            <span id="metaAttribution" class="inspector-val">© OSM contributors</span>
+          </div>
         </div>
       </div>
 
@@ -478,11 +554,12 @@
       <div class="panel-section">
         <div class="section-title">OSM Basemap & Gap Detection</div>
         <select id="basemapSelect">
-          <option value="osm_fr" selected>OpenStreetMap Standard (Icons &amp; POIs visible)</option>
-          <option value="carto_voyager">CARTO Voyager (Detailed OSM + POIs)</option>
+          <option value="osm_fr" selected>OpenStreetMap Standard (osmfr mirror, file:// friendly)</option>
+          <option value="carto_voyager">CARTO Voyager (Fast CDN + POI Icons)</option>
           <option value="carto_light">CARTO Positron (High Contrast Light)</option>
           <option value="carto_dark">CARTO Dark Matter</option>
           <option value="opentopo">OpenTopoMap</option>
+          <option value="osm_standard">OpenStreetMap.org (Blocked on file://)</option>
         </select>
 
         <div class="slider-container">
@@ -676,24 +753,28 @@
 
   // Initialize Map
   const map = L.map('map', {
-    center: [43.7384, 7.4246], // Monaco default
-    zoom: 15,
-    minZoom: 3,
+    center: [50.1109, 10.1657], // Central Europe / Germany default
+    zoom: 6,
+    minZoom: 2,
     maxZoom: 20,
     preferCanvas: true
   });
 
-  // Basemap Tile Layers (Reliable community & CDN mirrors without OSM Foundation 403 blocks)
+  // Basemap Tile Layers
   const tileLayers = {
-    osm_fr: L.tileLayer('https://{s}.tile.openstreetmap.fr/osmfr/{z}/{x}/{y}.png', {
-      maxZoom: 20,
-      subdomains: ['a', 'b', 'c'],
-      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; OpenStreetMap France'
+    osm_standard: L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      maxZoom: 19,
+      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
     }),
     carto_voyager: L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
       maxZoom: 20,
       subdomains: 'abcd',
       attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>'
+    }),
+    osm_fr: L.tileLayer('https://{s}.tile.openstreetmap.fr/osmfr/{z}/{x}/{y}.png', {
+      maxZoom: 20,
+      subdomains: ['a', 'b', 'c'],
+      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; OpenStreetMap France'
     }),
     carto_light: L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
       maxZoom: 20,
@@ -745,9 +826,7 @@
       conn = await db.connect();
       statusDot.className = 'status-dot active';
       statusText.textContent = 'DuckDB Ready';
-
-      // Auto-load Monaco sample if available locally
-      tryAutoLoadPreset();
+      showBanner('DuckDB Ready! Drop any .places.parquet file anywhere onto the page.', 4000);
     } catch (err) {
       console.error('Failed to init DuckDB-Wasm:', err);
       statusDot.className = 'status-dot warning';
@@ -780,6 +859,13 @@
   // Load Parquet via URL
   async function loadParquetURL(url, displayName) {
     if (!db || !conn) return;
+
+    // Browsers block fetch() on file:// URLs with CORS
+    if (window.location.protocol === 'file:' && !url.startsWith('http://') && !url.startsWith('https://')) {
+      showBanner('On file:// URLs, browsers forbid loading presets via URL. Please drop your .parquet file directly onto the page!', 5000);
+      return;
+    }
+
     const statusDot = document.getElementById('statusDot');
     const statusText = document.getElementById('statusText');
     statusDot.className = 'status-dot busy';
@@ -856,6 +942,30 @@
       catSelect.appendChild(opt);
     });
 
+    // Read Parquet KV Metadata if available
+    try {
+      const metaRes = await conn.query(`SELECT key, CAST(value AS VARCHAR) AS val FROM parquet_kv_metadata('${currentParquetName}')`);
+      const metaRows = metaRes.toArray().map(r => r.toJSON());
+      const meta = {};
+      metaRows.forEach(r => { meta[r.key] = r.val; });
+
+      const metaCard = document.getElementById('datasetMetaCard');
+      if (meta.compiler_version || meta.exported_at || meta.attribution || meta.source) {
+        document.getElementById('metaCompilerVersion').textContent = meta.compiler_version || 'N/A';
+        document.getElementById('metaExportedAt').textContent = meta.exported_at ? meta.exported_at.replace('T', ' ').replace('Z', ' UTC') : 'N/A';
+        document.getElementById('metaSchema').textContent = meta.schema || 'Overture Places';
+        document.getElementById('metaLicense').textContent = meta.license || 'ODbL-1.0';
+        document.getElementById('metaAttribution').textContent = meta.attribution || '© OSM contributors';
+        document.getElementById('metaCountryCode').textContent = meta.country_code ? `[${meta.country_code}]` : '';
+        metaCard.style.display = 'block';
+      } else {
+        metaCard.style.display = 'none';
+      }
+    } catch (e) {
+      console.warn('Could not read parquet_kv_metadata:', e);
+      document.getElementById('datasetMetaCard').style.display = 'none';
+    }
+
     statusDot.className = 'status-dot active';
     statusText.textContent = `${currentParquetName} (${totalDatasetRows.toLocaleString()} POIs)`;
     showBanner(`Loaded ${currentParquetName} with ${totalDatasetRows.toLocaleString()} POIs`, 3000);
@@ -872,19 +982,7 @@
     updatePOIs();
   }
 
-  // Attempt to auto-load Monaco sample if available relative to page
-  async function tryAutoLoadPreset() {
-    const candidates = ['MC_monaco.places.parquet', '../MC_monaco.places.parquet'];
-    for (const path of candidates) {
-      try {
-        const resp = await fetch(path, { method: 'HEAD' });
-        if (resp.ok) {
-          loadParquetURL(path, 'MC_monaco.places.parquet');
-          break;
-        }
-      } catch (_) {}
-    }
-  }
+
 
   // Viewport Query & POI Rendering
   async function updatePOIs() {
@@ -949,6 +1047,10 @@
           categories.primary AS category,
           basic_category,
           operating_status,
+          version,
+          sources[1].update_time AS update_time,
+          sources[1].dataset AS dataset,
+          sources[1].license AS license,
           (bbox.xmin + bbox.xmax) / 2 AS lon,
           (bbox.ymin + bbox.ymax) / 2 AS lat,
           addresses[1].freeform AS address,
@@ -999,7 +1101,7 @@
 
       // Simple tooltip on hover
       const displayName = poi.name ? poi.name : `<i>(Unnamed ${poi.category || 'POI'})</i>`;
-      marker.bindTooltip(`<b>${displayName}</b><br><span style="color:${color}">${poi.category || poi.basic_category || 'place'}</span>`, {
+      marker.bindTooltip(`<b>${displayName}</b><br><span style="color:${color}">${poi.category || poi.basic_category || 'place'} (v${poi.version || '1'})</span>`, {
         direction: 'top',
         offset: [0, -radius]
       });
@@ -1040,6 +1142,19 @@
         <span class="inspector-val">${poi.operating_status || 'operational'}</span>
       </div>
       <div class="inspector-row">
+        <span class="inspector-key">OSM Version:</span>
+        <span class="inspector-val" style="font-weight: 600; color: #38bdf8;">v${poi.version != null ? poi.version : '1'}</span>
+      </div>
+      ${poi.update_time ? `
+      <div class="inspector-row">
+        <span class="inspector-key">Last OSM Edit:</span>
+        <span class="inspector-val" style="font-size: 0.72rem;">${poi.update_time.replace('T', ' ').replace('Z', ' UTC')}</span>
+      </div>` : ''}
+      <div class="inspector-row">
+        <span class="inspector-key">Source &amp; License:</span>
+        <span class="inspector-val" style="font-size: 0.72rem;">${poi.dataset || 'OpenStreetMap'} (${poi.license || 'ODbL-1.0'})</span>
+      </div>
+      <div class="inspector-row">
         <span class="inspector-key">Address:</span>
         <span class="inspector-val">${poi.address || 'N/A'}</span>
       </div>
@@ -1058,9 +1173,12 @@
         <span class="inspector-val">${poi.phone}</span>
       </div>` : ''}
       ${osmUrl ? `
-      <div style="margin-top: 6px; padding-top: 6px; border-top: 1px solid #334155; text-align: center;">
-        <a href="${osmUrl}" target="_blank" class="btn btn-sm" style="width: 100%; color: #38bdf8; border-color: #38bdf8;">
-          Inspect OSM Object (${poi.id}) ↗
+      <div style="margin-top: 8px; padding-top: 6px; border-top: 1px solid #334155; display: flex; gap: 6px;">
+        <a href="${osmUrl}" target="_blank" class="btn btn-sm" style="flex: 1; color: #38bdf8; border-color: #38bdf8; text-align: center;">
+          OSM Object (v${poi.version || '1'}) ↗
+        </a>
+        <a href="${osmUrl}/history" target="_blank" class="btn btn-sm" style="color: #94a3b8; border-color: #475569; text-align: center;" title="View edit history on OpenStreetMap">
+          History ↗
         </a>
       </div>` : ''}
     `;
@@ -1096,20 +1214,45 @@
     }
   });
 
-  // Drag & Drop
-  const dropZone = document.getElementById('dropZone');
-  dropZone.addEventListener('dragover', (e) => {
+  // Full-Window Drag & Drop
+  const fullDropOverlay = document.getElementById('fullDropOverlay');
+  let dragCounter = 0;
+
+  window.addEventListener('dragenter', (e) => {
     e.preventDefault();
-    dropZone.classList.add('drag-over');
+    dragCounter++;
+    if (e.dataTransfer && e.dataTransfer.types && Array.from(e.dataTransfer.types).includes('Files')) {
+      fullDropOverlay.classList.add('active');
+    }
   });
-  dropZone.addEventListener('dragleave', () => dropZone.classList.remove('drag-over'));
-  dropZone.addEventListener('drop', (e) => {
+
+  window.addEventListener('dragover', (e) => {
     e.preventDefault();
-    dropZone.classList.remove('drag-over');
-    if (e.dataTransfer.files.length > 0) {
+    if (e.dataTransfer) {
+      e.dataTransfer.dropEffect = 'copy';
+    }
+  });
+
+  window.addEventListener('dragleave', (e) => {
+    e.preventDefault();
+    dragCounter--;
+    if (dragCounter <= 0) {
+      dragCounter = 0;
+      fullDropOverlay.classList.remove('active');
+    }
+  });
+
+  window.addEventListener('drop', (e) => {
+    e.preventDefault();
+    dragCounter = 0;
+    fullDropOverlay.classList.remove('active');
+    if (e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files.length > 0) {
       loadParquetFile(e.dataTransfer.files[0]);
     }
   });
+
+  // Sidebar dropZone click-to-browse
+  const dropZone = document.getElementById('dropZone');
   dropZone.addEventListener('click', () => document.getElementById('fileInput').click());
 
   // Preset selector
@@ -1202,9 +1345,9 @@
     sidebar.classList.add('collapsed');
   });
 
-  // File:// protocol detection warning
+  // File:// protocol detection notice (console only)
   if (window.location.protocol === 'file:') {
-    alert('Notice: Browsers restrict WebAssembly and Web Workers on file:// URLs. If DuckDB-Wasm does not initialize, please serve this viewer via a local HTTP server (e.g. `npx serve viewer`, `python3 -m http.server`, or VS Code Live Server).');
+    console.warn('Notice: Browsers restrict WebAssembly and Web Workers on file:// URLs. If DuckDB-Wasm does not initialize, please serve this viewer via a local HTTP server.');
   }
 
   // Start DuckDB initialization

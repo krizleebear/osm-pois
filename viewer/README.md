@@ -26,7 +26,7 @@ Then open `http://localhost:8080/viewer/` in your browser.
 
 ### 1. Zero Backend / Pure Client-Side DuckDB-Wasm
 * Powered by `@duckdb/duckdb-wasm` directly in your browser.
-* Reads `.places.parquet` files directly via **Drag & Drop** or file picker using the Browser FileReader protocol without uploading your files anywhere.
+* Reads `.places.parquet` files directly via **Full-Window Drag & Drop** (drop anywhere on the page) or file picker using the Browser FileReader protocol without uploading your files anywhere.
 * Spatial viewport bounding-box queries execute in milliseconds using column projection and row-group predicate pushdown on Parquet metadata (`bbox.xmin`, `bbox.xmax`, `bbox.ymin`, `bbox.ymax`).
 
 ### 2. Zoom-Adaptive Density & Level-of-Detail (LOD)
@@ -48,11 +48,24 @@ To ensure the browser stays responsive even when inspecting massive datasets (li
 * **⚡ Blink Overlay**: Toggles the POI overlay on and off every 500ms to immediately highlight OSM icons on the basemap that lack a corresponding POI marker (gap spotted!).
 * **Opacity Sliders**: Fine-tune basemap and POI overlay transparency for side-by-side comparison.
 
-### 4. Interactive Feature Inspection & OSM Link
-* Clicking on any POI circle marker inspects its Overture schema properties:
+### 4. Interactive Feature Inspection, Versioning & OSM Link
+* Clicking on any POI circle marker inspects its Overture schema properties and provenance:
   * `names.primary`
   * `categories.primary` & `basic_category`
+  * **OSM Version**: Feature revision number (`v14`)
+  * **Last OSM Edit**: UTC timestamp of the last edit (`2023-10-24 17:35:37 UTC`)
+  * **Source & License**: `OpenStreetMap (ODbL-1.0)`
   * `operating_status`
   * `addresses` (freeform, postcode, locality)
   * `websites`, `phones`
-  * Direct clickable link to OpenStreetMap (`https://www.openstreetmap.org/node/...` or `way/...`) to view the raw source tags.
+  * **Direct Links**:
+    * Clickable link to OpenStreetMap object (`https://www.openstreetmap.org/node/...` or `way/...`) to view raw source tags.
+    * Clickable link to OpenStreetMap version history (`.../history`) to inspect past edits and changesets.
+
+### 5. Dataset Metadata & Provenance Card
+* Automatically reads file-level Key-Value metadata from Parquet footers via DuckDB-Wasm:
+  * **Compiler Version**: Release build number or git commit hash
+  * **Exported Date**: UTC timestamp when the parquet file was compiled
+  * **Schema**: Overture Places specification
+  * **License & Attribution**: ODbL-1.0 & © OpenStreetMap contributors
+  * **Country Code**: ISO country code badge (e.g. `[MC]`, `[DE]`)
