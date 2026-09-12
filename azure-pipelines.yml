@@ -18,6 +18,10 @@ trigger: none
 pr: none
 
 parameters:
+- name: publishGitHubRelease
+  displayName: 'Publish GitHub Release with GeoParquet assets'
+  type: boolean
+  default: false
 - name: skipOsmiumFilter
   displayName: 'Skip Osmium filtering (use pre-filtered pois.pbf pipeline artifacts)'
   type: boolean
@@ -988,5 +992,48 @@ stages:
             rm -f *.pbf *.parquet
             rm -rf osm-data-*
           fi
+
+# ---------------------------------------------------------------------------
+# Stage 3: Publish GitHub Release (optional, driven by parameter)
+# ---------------------------------------------------------------------------
+- stage: release
+  displayName: 'Publish GitHub Release'
+  dependsOn: convert
+  condition: and(succeeded(), eq('${{ parameters.publishGitHubRelease }}', 'true'))
+  jobs:
+  - job: release
+    displayName: 'Create GitHub Release with GeoParquet Assets'
+    pool:
+      vmImage: 'ubuntu-latest'
+    steps:
+    - checkout: none
+
+    - task: DownloadPipelineArtifact@2
+      displayName: 'Download all places-parquet artifacts'
+      inputs:
+        itemPattern: 'places-parquet-*/**'
+        targetPath: '$(Pipeline.Workspace)/release_assets'
+
+    - task: GitHubRelease@1
+      displayName: 'Create GitHub Release'
+      inputs:
+        gitHubConnection: '3c34db30-d57b-42e2-a970-857bd932c6c0'
+        repositoryName: 'krizleebear/osm-pois'
+        action: 'create'
+        target: '$(Build.SourceVersion)'
+        tagSource: 'userSpecifiedTag'
+        tag: '$(Build.BuildNumber)'
+        title: 'Release $(Build.BuildNumber)'
+        releaseNotesSource: 'inline'
+        releaseNotesInline: |
+          Automated worldwide OpenStreetMap (OSM) to Overture Places-compatible GeoParquet release.
+          
+          - **Build:** `$(Build.BuildNumber)`
+          - **Commit:** `$(Build.SourceVersion)`
+          - **Schema:** Overture Maps `theme=places / type=place`
+          - **License:** Open Database License (ODbL 1.0) © OpenStreetMap contributors
+        assets: '$(Pipeline.Workspace)/release_assets/**/*.parquet'
+        addChangeLog: false
+
 
 
