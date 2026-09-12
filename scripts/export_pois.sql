@@ -4,33 +4,40 @@ LOAD spatial;
 -- Load Overture category hierarchy from taxonomy CSV
 CREATE TEMP TABLE overture_taxonomy AS
 SELECT 
-    trim(split_part(column0, ';', 1)) AS overture_cat,
-    str_split(replace(replace(trim(split_part(column0, ';', 2)), '[', ''), ']', ''), ',') AS hierarchy
+    trim(column0) AS overture_cat,
+    str_split(replace(replace(trim(column1), '[', ''), ']', ''), ',') AS hierarchy
 FROM read_csv('__REPO_ROOT__/mappings/overture_categories.csv', header=False);
 
 -- Load Category Mapping Rules (overture_to_osm_categories)
 CREATE TEMP TABLE category_rules AS
-WITH raw_rules AS (
-    SELECT 
-        trim(split_part(column0, ';', 1)) AS overture_cat,
-        trim(split_part(column0, ';', 2)) AS tag_expr
-    FROM read_csv('__REPO_ROOT__/mappings/overture_to_osm_categories.csv', header=False)
-)
 SELECT 
+    trim(column0) AS overture_cat,
+    trim(column1) AS tag_expr,
+    split_part(split_part(trim(column1), ',', 1), '=', 1) AS primary_key,
+    split_part(split_part(trim(column1), ',', 1), '=', 2) AS primary_val,
+    split_part(split_part(trim(column1), ',', 2), '=', 1) AS sub_key,
+    split_part(split_part(trim(column1), ',', 2), '=', 2) AS sub_val,
+    length(split_part(trim(column1), ',', 2)) AS has_subtag
+FROM read_csv('__REPO_ROOT__/mappings/overture_to_osm_categories.csv', header=False);
+
+-- Clean single primary mapping table (prefer exact single tag match, e.g. shop=clothes -> clothing_store)
+CREATE TEMP TABLE primary_rules AS
+SELECT DISTINCT ON (primary_key, primary_val)
     overture_cat,
-    tag_expr,
-    split_part(split_part(tag_expr, ',', 1), '=', 1) AS primary_key,
-    split_part(split_part(tag_expr, ',', 1), '=', 2) AS primary_val
-FROM raw_rules;
+    primary_key,
+    primary_val
+FROM category_rules
+ORDER BY primary_key, primary_val, has_subtag ASC, overture_cat ASC;
 
 -- Extract Raw Features from OSM PBF
 CREATE TEMP TABLE raw_features AS
 SELECT 
     'osm:node/' || COALESCE(osm_id, '') AS id,
-    name,
+    COALESCE(name, brand, operator) AS name,
     name_en,
     name_de,
     amenity,
+    cuisine,
     shop,
     tourism,
     leisure,
@@ -56,17 +63,18 @@ FROM ST_Read(
     layer = 'points',
     open_options = ['CONFIG_FILE=__REPO_ROOT__/config/osmconf.ini']
 )
-WHERE name IS NOT NULL 
+WHERE (name IS NOT NULL OR brand IS NOT NULL OR operator IS NOT NULL)
   AND (amenity IS NOT NULL OR shop IS NOT NULL OR tourism IS NOT NULL OR leisure IS NOT NULL OR office IS NOT NULL OR craft IS NOT NULL OR healthcare IS NOT NULL OR historic IS NOT NULL)
 
 UNION ALL
 
 SELECT 
     'osm:way/' || COALESCE(osm_way_id, osm_id, '') AS id,
-    name,
+    COALESCE(name, brand, operator) AS name,
     name_en,
     name_de,
     amenity,
+    cuisine,
     shop,
     tourism,
     leisure,
@@ -92,7 +100,7 @@ FROM ST_Read(
     layer = 'multipolygons',
     open_options = ['CONFIG_FILE=__REPO_ROOT__/config/osmconf.ini']
 )
-WHERE name IS NOT NULL 
+WHERE (name IS NOT NULL OR brand IS NOT NULL OR operator IS NOT NULL)
   AND (amenity IS NOT NULL OR shop IS NOT NULL OR tourism IS NOT NULL OR leisure IS NOT NULL OR office IS NOT NULL OR craft IS NOT NULL OR healthcare IS NOT NULL OR historic IS NOT NULL)
   AND ST_IsValid(geom);
 
@@ -102,14 +110,22 @@ COPY (
         SELECT 
             f.*,
             COALESCE(
-                (SELECT r.overture_cat FROM category_rules r WHERE r.primary_key = 'amenity' AND r.primary_val = f.amenity LIMIT 1),
-                (SELECT r.overture_cat FROM category_rules r WHERE r.primary_key = 'shop' AND r.primary_val = f.shop LIMIT 1),
-                (SELECT r.overture_cat FROM category_rules r WHERE r.primary_key = 'tourism' AND r.primary_val = f.tourism LIMIT 1),
-                (SELECT r.overture_cat FROM category_rules r WHERE r.primary_key = 'leisure' AND r.primary_val = f.leisure LIMIT 1),
-                (SELECT r.overture_cat FROM category_rules r WHERE r.primary_key = 'office' AND r.primary_val = f.office LIMIT 1),
-                (SELECT r.overture_cat FROM category_rules r WHERE r.primary_key = 'craft' AND r.primary_val = f.craft LIMIT 1),
-                (SELECT r.overture_cat FROM category_rules r WHERE r.primary_key = 'healthcare' AND r.primary_val = f.healthcare LIMIT 1),
-                (SELECT r.overture_cat FROM category_rules r WHERE r.primary_key = 'historic' AND r.primary_val = f.historic LIMIT 1),
+                -- 1. Cuisine-specific restaurant match (e.g. amenity=restaurant,cuisine=italian -> italian_restaurant)
+                CASE WHEN f.amenity = 'restaurant' AND f.cuisine IS NOT NULL THEN
+                    (SELECT r.overture_cat FROM category_rules r 
+                     WHERE r.primary_key = 'amenity' AND r.primary_val = 'restaurant' 
+                       AND r.sub_key = 'cuisine' AND r.sub_val = split_part(f.cuisine, ';', 1) 
+                     LIMIT 1)
+                END,
+                -- 2. Primary tag matches from deterministic rule table
+                (SELECT r.overture_cat FROM primary_rules r WHERE r.primary_key = 'amenity' AND r.primary_val = f.amenity),
+                (SELECT r.overture_cat FROM primary_rules r WHERE r.primary_key = 'shop' AND r.primary_val = f.shop),
+                (SELECT r.overture_cat FROM primary_rules r WHERE r.primary_key = 'tourism' AND r.primary_val = f.tourism),
+                (SELECT r.overture_cat FROM primary_rules r WHERE r.primary_key = 'leisure' AND r.primary_val = f.leisure),
+                (SELECT r.overture_cat FROM primary_rules r WHERE r.primary_key = 'office' AND r.primary_val = f.office),
+                (SELECT r.overture_cat FROM primary_rules r WHERE r.primary_key = 'craft' AND r.primary_val = f.craft),
+                (SELECT r.overture_cat FROM primary_rules r WHERE r.primary_key = 'healthcare' AND r.primary_val = f.healthcare),
+                (SELECT r.overture_cat FROM primary_rules r WHERE r.primary_key = 'historic' AND r.primary_val = f.historic),
                 f.amenity,
                 f.shop,
                 f.tourism,
