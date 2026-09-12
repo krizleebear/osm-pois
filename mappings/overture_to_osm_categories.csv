@@ -67,6 +67,11 @@ anglican_church;amenity=place_of_worship,religion=christian,denomination=anglica
 baptist_church;amenity=place_of_worship,religion=christian,denomination=baptist
 episcopal_church;amenity=place_of_worship,religion=christian,denomination=episcopal
 evangelical_church;amenity=place_of_worship,religion=christian,denomination=evangelical
+evangelical_church;amenity=place_of_worship,religion=christian,denomination=lutheran
+evangelical_church;amenity=place_of_worship,religion=christian,denomination=protestant
+evangelical_church;amenity=place_of_worship,denomination=evangelical
+evangelical_church;amenity=place_of_worship,denomination=lutheran
+evangelical_church;amenity=place_of_worship,denomination=protestant
 refinishing_services;craft=carpenter,service=refinishing
 electrical_consultant;office=consulting,consulting=electrical
 energy_management_and_conservation_consultants;office=consulting,consulting=energy_management
@@ -119,6 +124,9 @@ bathroom_fixture_stores;
 architecture_schools;amenity=college
 dental_laboratories;amenity=laboratory,laboratory=dental
 catholic_church;amenity=place_of_worship,religion=christian,denomination=catholic
+catholic_church;amenity=place_of_worship,religion=christian,denomination=roman_catholic
+catholic_church;amenity=place_of_worship,denomination=catholic
+catholic_church;amenity=place_of_worship,denomination=roman_catholic
 pentecostal_church;amenity=place_of_worship,religion=christian,denomination=pentecostal
 foster_care_services;amenity=social_facility,social_facility=outreach,social_facility:for=children
 ticket_sales;amenity=ticket_office
@@ -939,7 +947,7 @@ hot_springs;natural=hot_spring
 lake;natural=water,water=lake
 river;waterway=river
 waterfall;waterway=waterfall
-n/a;amenity=doctors
+doctors_office;amenity=doctors
 emergency_or_urgent_care_facility;amenity=hospital,healthcare:speciality=emergency
 hospital;healthcare=doctor,healthcare:speciality=internal_medicine
 emergency_department;amenity=hospital,department=emergency
@@ -983,7 +991,7 @@ reflexology;healthcare=alternative,alternative=reflexology
 reiki;healthcare=alternative,alternative=reiki
 traditional_chinese_medicine;healthcare=alternative,healthcare:speciality=traditional_chinese_medicine
 tui_na;healthcare=alternative,alternative=tuina
-dental_clinic;amenity=dentist
+dentist;amenity=dentist
 cosmetic_dentistry;amenity=dentist,healthcare:speciality=cosmetic_dentistry
 dental_hygiene;amenity=dentist,healthcare:speciality=hygiene
 endodontics;healthcare=dentist,healthcare:speciality=endodontics
@@ -1018,7 +1026,7 @@ rehabilitation_center;amenity=hospital,hospital:category=rehabilitation
 addiction_rehabilitation_center;healthcare=rehabilitation,healthcare:speciality=drug_addiction
 speech_therapy;healthcare=speech_therapist
 community_health_center;
-concierge_medicine;amenity=doctors
+concierge_medicine;amenity=doctors,healthcare:speciality=concierge_medicine
 family_practice;
 mobile_clinic;amenity=clinic,mobile=yes
 public_health_clinic;amenity=clinic,operator:type=public
@@ -1123,7 +1131,9 @@ food_consultant;
 food_delivery_service;amenity=restaurant,delivery=yes,takeaway=no
 personal_or_beauty_service;amenity=social_facility,social_facility=outreach
 acne_treatment;amenity=clinic,healthcare:speciality=dermatology
-barber;shop=hairdresser
+hair_salon;shop=hairdresser
+barber;shop=hairdresser,male=yes
+barber;shop=hairdresser,barber=yes
 beauty_salon;shop=beauty
 tattoo_and_piercing;shop=tattoo,piercing=yes
 piercing;shop=piercing

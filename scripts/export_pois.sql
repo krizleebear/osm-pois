@@ -17,6 +17,8 @@ SELECT
     split_part(split_part(trim(column1), ',', 1), '=', 2) AS primary_val,
     split_part(split_part(trim(column1), ',', 2), '=', 1) AS sub_key,
     split_part(split_part(trim(column1), ',', 2), '=', 2) AS sub_val,
+    split_part(split_part(trim(column1), ',', 3), '=', 1) AS sub3_key,
+    split_part(split_part(trim(column1), ',', 3), '=', 2) AS sub3_val,
     length(split_part(trim(column1), ',', 2)) AS has_subtag
 FROM read_csv('__REPO_ROOT__/mappings/overture_to_osm_categories.csv', header=False);
 
@@ -37,6 +39,8 @@ SELECT
     name_en,
     name_de,
     amenity,
+    religion,
+    denomination,
     cuisine,
     shop,
     tourism,
@@ -76,6 +80,8 @@ SELECT
     name_en,
     name_de,
     amenity,
+    religion,
+    denomination,
     cuisine,
     shop,
     tourism,
@@ -119,6 +125,7 @@ COPY (
                     (SELECT r.overture_cat FROM category_rules r 
                      WHERE r.primary_key = 'amenity' AND r.primary_val = 'restaurant' 
                        AND r.sub_key = 'cuisine' AND r.sub_val = split_part(f.cuisine, ';', 1) 
+                     ORDER BY r.overture_cat ASC
                      LIMIT 1)
                 END,
                 -- 2. Transit station subtag match (e.g. railway=station,station=subway -> light_rail_and_subway_station)
@@ -126,9 +133,41 @@ COPY (
                     (SELECT r.overture_cat FROM category_rules r 
                      WHERE r.primary_key = 'railway' AND r.primary_val = 'station' 
                        AND r.sub_key = 'station' AND r.sub_val = f.station 
+                     ORDER BY r.overture_cat ASC
                      LIMIT 1)
                 END,
-                -- 3. Primary tag matches from deterministic rule table
+                -- 3. Place of worship denomination & religion subtag match (e.g. amenity=place_of_worship,religion=christian,denomination=catholic -> catholic_church)
+                CASE WHEN f.amenity = 'place_of_worship' THEN
+                    COALESCE(
+                        -- 3-tag match: amenity=place_of_worship, religion=..., denomination=...
+                        CASE WHEN f.religion IS NOT NULL AND f.denomination IS NOT NULL THEN
+                            (SELECT r.overture_cat FROM category_rules r 
+                             WHERE r.primary_key = 'amenity' AND r.primary_val = 'place_of_worship' 
+                               AND r.sub_key = 'religion' AND r.sub_val = split_part(f.religion, ';', 1)
+                               AND r.sub3_key = 'denomination' AND r.sub3_val = split_part(f.denomination, ';', 1)
+                             LIMIT 1)
+                        END,
+                        -- 2-tag match by denomination: amenity=place_of_worship, denomination=...
+                        CASE WHEN f.denomination IS NOT NULL THEN
+                            (SELECT r.overture_cat FROM category_rules r 
+                             WHERE r.primary_key = 'amenity' AND r.primary_val = 'place_of_worship' 
+                               AND (
+                                   (r.sub_key = 'denomination' AND r.sub_val = split_part(f.denomination, ';', 1)) OR
+                                   (r.sub3_key = 'denomination' AND r.sub3_val = split_part(f.denomination, ';', 1))
+                               )
+                             LIMIT 1)
+                        END,
+                        -- 2-tag match by religion: amenity=place_of_worship, religion=...
+                        CASE WHEN f.religion IS NOT NULL THEN
+                            (SELECT r.overture_cat FROM category_rules r 
+                             WHERE r.primary_key = 'amenity' AND r.primary_val = 'place_of_worship' 
+                               AND r.sub_key = 'religion' AND r.sub_val = split_part(f.religion, ';', 1)
+                               AND (r.sub3_key IS NULL OR r.sub3_key = '')
+                             LIMIT 1)
+                        END
+                    )
+                END,
+                -- 4. Primary tag matches from deterministic rule table
                 (SELECT r.overture_cat FROM primary_rules r WHERE r.primary_key = 'amenity' AND r.primary_val = f.amenity),
                 (SELECT r.overture_cat FROM primary_rules r WHERE r.primary_key = 'shop' AND r.primary_val = f.shop),
                 (SELECT r.overture_cat FROM primary_rules r WHERE r.primary_key = 'tourism' AND r.primary_val = f.tourism),
