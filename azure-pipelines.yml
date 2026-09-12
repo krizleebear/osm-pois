@@ -1036,7 +1036,7 @@ stages:
 - stage: release
   displayName: 'Publish GitHub Release'
   dependsOn: convert
-  condition: and(succeeded('convert'), eq(parameters.publishGitHubRelease, true))
+  condition: and(succeeded('convert'), ${{ eq(parameters.publishGitHubRelease, true) }})
   jobs:
   - job: release
     displayName: 'Create GitHub Release with GeoParquet Assets'
