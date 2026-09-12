@@ -6,7 +6,7 @@ CREATE TEMP TABLE overture_taxonomy AS
 SELECT 
     trim(split_part(column0, ';', 1)) AS overture_cat,
     str_split(replace(replace(trim(split_part(column0, ';', 2)), '[', ''), ']', ''), ',') AS hierarchy
-FROM read_csv('/app/mappings/overture_categories.csv', header=False);
+FROM read_csv('__REPO_ROOT__/mappings/overture_categories.csv', header=False);
 
 -- Load Category Mapping Rules (overture_to_osm_categories)
 -- Format: overture_category;key=val,key2=val2
@@ -15,7 +15,7 @@ WITH raw_rules AS (
     SELECT 
         trim(split_part(column0, ';', 1)) AS overture_cat,
         trim(split_part(column0, ';', 2)) AS tag_expr
-    FROM read_csv('/app/mappings/overture_to_osm_categories.csv', header=False)
+    FROM read_csv('__REPO_ROOT__/mappings/overture_to_osm_categories.csv', header=False)
 )
 SELECT 
     overture_cat,
@@ -56,7 +56,7 @@ SELECT
 FROM ST_Read(
     '__INPUT_PBF__',
     layer = 'points',
-    open_options = ['CONFIG_FILE=/app/osmconf.ini']
+    open_options = ['CONFIG_FILE=__REPO_ROOT__/config/osmconf.ini']
 )
 WHERE name IS NOT NULL 
   AND (amenity IS NOT NULL OR shop IS NOT NULL OR tourism IS NOT NULL OR leisure IS NOT NULL OR office IS NOT NULL OR craft IS NOT NULL OR healthcare IS NOT NULL OR historic IS NOT NULL)
@@ -92,7 +92,7 @@ SELECT
 FROM ST_Read(
     '__INPUT_PBF__',
     layer = 'multipolygons',
-    open_options = ['CONFIG_FILE=/app/osmconf.ini']
+    open_options = ['CONFIG_FILE=__REPO_ROOT__/config/osmconf.ini']
 )
 WHERE name IS NOT NULL 
   AND (amenity IS NOT NULL OR shop IS NOT NULL OR tourism IS NOT NULL OR leisure IS NOT NULL OR office IS NOT NULL OR craft IS NOT NULL OR healthcare IS NOT NULL OR historic IS NOT NULL)

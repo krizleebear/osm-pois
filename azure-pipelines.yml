@@ -35,8 +35,8 @@ resources:
   # Primary registry: GHCR (no rate limits, no mirror.gcr.io flakiness).
   # Fallback: mirror.gcr.io is attempted in the warmup job for cache pre-warming.
   - container: osm2parquet
-    # krizleebear/osm2pois:v1.0.9 (standard Docker Schema 2 format)
-    image: ghcr.io/krizleebear/osm2pois:v1.0.9
+    # krizleebear/osm2parquet:v1.0.9 (standard Docker Schema 2 format)
+    image: ghcr.io/krizleebear/osm2parquet:v1.0.9
 
 stages:
 # ---------------------------------------------------------------------------
@@ -61,8 +61,8 @@ stages:
         targetType: 'inline'
         script: |
           set -e
-          GHCR_IMAGE="ghcr.io/krizleebear/osm2pois:v1.0.9"
-          MIRROR_IMAGE="mirror.gcr.io/krizleebear/osm2pois:v1.0.9"
+          GHCR_IMAGE="ghcr.io/krizleebear/osm2parquet:v1.0.9"
+          MIRROR_IMAGE="mirror.gcr.io/krizleebear/osm2parquet:v1.0.9"
 
           pull_with_retry() {
             local IMAGE="$1"
@@ -843,7 +843,7 @@ stages:
           COUNTRY_CODE: 'UA'
     steps:
 
-    - checkout: none
+    - checkout: self
 
     - task: Bash@3
       target: host
@@ -955,7 +955,7 @@ stages:
           fi
 
           echo "[INFO] Converting filtered PBF to GeoParquet via DuckDB..."
-          /app/entrypoint.sh "$FILTERED_PBF" "$OUTPUT_PARQUET" "$COUNTRY_CODE"
+          ./scripts/entrypoint.sh "$FILTERED_PBF" "$OUTPUT_PARQUET" "$COUNTRY_CODE"
 
     - task: PublishPipelineArtifact@1
       enabled: true
@@ -980,6 +980,6 @@ stages:
       inputs:
         targetType: 'inline'
         script: |
-          rm -rf $(System.DefaultWorkingDirectory)/*
+          git clean -fdx
 
 
