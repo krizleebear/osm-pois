@@ -14,9 +14,9 @@ This document guides AI coding agents (such as Antigravity CLI / `agy`, OpenCode
   * It compiles **ALL points of interest** across all commercial, social, cultural, administrative, and service tiers (restaurants, shops, offices, crafts, healthcare, tourism, leisure, services, transport, etc.) into the Overture schema.
 * **Core Technology Stack**:
   * **DuckDB CLI** with `spatial` and `httpfs` extensions (SQL-based transformations, zero Java/JVM dependencies).
-  * **Osmium-Tool** (`osmium tags-filter`) for high-throughput pre-filtering of raw OSM PBF data.
+  * **Osmium-Tool** (`osmium export` and `osmium tags-filter`) for high-throughput pre-filtering and zero-disk streaming of GeoJSON sequences via FIFO pipes directly into DuckDB.
   * **Azure DevOps Pipelines** for parallel matrix builds across 150+ countries/regions.
-  * **GDAL / OGR OSM Driver** (`config/osmconf.ini`) for schema definition when reading PBF layers (`points`, `multipolygons`).
+  * **Zero Intermediate Disk I/O**: `osmium export` streams newline-delimited GeoJSON features directly into DuckDB via a named pipe (`mkfifo`), bypassing GDAL's 100 MB SQLite cache limitation and reconstructing 100% of points, ways, and polygons.
 
 ---
 
@@ -62,15 +62,18 @@ When modifying or generating code in this repository, you **MUST** follow these 
 6. **Preserve Granularity (No Lossy Over-Generalization)**:
    * Do not map distinct, specialized OSM concepts to broad, inaccurate parent buckets (e.g. `amenity=public_bookcase` MUST NOT be mapped to `library`, `waste_basket` or `bench` must not be force-mapped to unrelated commercial places).
    * It is strictly preferable to preserve the original OSM tag name (e.g. `categories.primary = 'public_bookcase'`) rather than artificially forcing it into an ill-fitting Overture bucket. Downstream systems cannot undo lossy generalizations.
-7. **Triad Invariant for Tag Additions (Config -> Filter -> SQL)**:
+7. **Tag Pipeline Invariant (Filter -> SQL)**:
    * Whenever a new OSM tag or subtag is introduced (e.g. `cuisine`, `railway`, `station`, `operator`):
-     1. Add it to `[points]` AND `[multipolygons]` in `config/osmconf.ini`.
-     2. Add it to `osmium tags-filter` in `azure-pipelines.yml`.
-     3. Add it to `raw_features` and category mapping in `scripts/export_pois.sql`.
-   * Omitting any of these three steps will cause silent data loss or NULL values.
+     1. Ensure it is preserved by `osmium tags-filter` in `azure-pipelines.yml`.
+     2. Extract it in `raw_features` and handle it in the category mapping logic in `scripts/export_pois.sql`.
+   * Note: With `osmium export`, all OSM tags are preserved in the JSON `properties` object without requiring manual `config/osmconf.ini` schema adjustments.
 8. **Azure DevOps Boolean Parameters & Conditions**:
    * Do not use template string expansion like `eq('${{ parameters.x }}', 'true')`. In Azure Pipelines, boolean parameters evaluate at template expansion time to C# capitalized strings (`'True'` / `'False'`), causing equality checks against lowercase `'true'` to fail silently.
    * Always use canonical boolean expression syntax: `eq(parameters.x, true)`.
+9. **Atomic Commits & Mandatory Test Expansion**:
+   * **Mandatory Test Coverage**: Whenever adding a new feature, new category mapping, or fixing a bug, you **MUST** extend the test suite (e.g., add new test cases in `tests/test_unit.sql` or add validation assertions in `tests/test_conversion.sh`).
+   * **Immediate Atomic Commits**: As soon as a feature, fix, or logical task is completed and verified (`./tests/run_unit_tests.sh` and/or `./tests/test_conversion.sh` pass), immediately create a clean Git commit with a conventional commit message.
+   * **No Uncommitted Work Pile-up**: Never leave multiple unrelated features uncommitted in the working tree. Commit each topic separately once green.
 
 ---
 
