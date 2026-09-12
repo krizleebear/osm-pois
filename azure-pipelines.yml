@@ -44,23 +44,33 @@ resources:
 
 stages:
 # ---------------------------------------------------------------------------
-# Stage 1: Verify container image availability & host disk reclaim
+# Stage 1: Fast-Fail Preflight & Container Image Verification
 # Pulls from GHCR (primary). Falls back to mirror.gcr.io if GHCR is
-# unavailable. Fails fast with a clear message if both registries fail.
+# unavailable. Validates pipeline YAML and runs unit tests in container.
 # ---------------------------------------------------------------------------
-- stage: warmup
-  displayName: 'Verify container image availability'
+- stage: preflight
+  displayName: 'Fast-Fail Preflight & Image Verification'
 
   jobs:
-  - job: warmup
-    displayName: 'Verify image pull (GHCR primary, mirror.gcr.io fallback)'
+  - job: preflight
+    displayName: 'YAML validation, image pull & unit tests'
     pool:
       vmImage: 'ubuntu-latest'
     steps:
-    - checkout: none
+    - checkout: self
 
     - task: Bash@3
-      displayName: 'Pull image: GHCR primary, mirror.gcr.io fallback'
+      displayName: 'Validate pipeline YAML syntax'
+      inputs:
+        targetType: 'inline'
+        script: |
+          set -e
+          echo "[INFO] Validating azure-pipelines.yml syntax..."
+          python3 -c "import yaml; yaml.safe_load(open('azure-pipelines.yml'))"
+          echo "[OK] azure-pipelines.yml syntax is valid."
+
+    - task: Bash@3
+      displayName: 'Verify image pull (GHCR primary, mirror.gcr.io fallback)'
       inputs:
         targetType: 'inline'
         script: |
@@ -84,26 +94,33 @@ stages:
             return 0
           }
 
+          ACTIVE_IMAGE=""
           echo "[INFO] Attempting pull from GHCR (primary): $GHCR_IMAGE"
           if pull_with_retry "$GHCR_IMAGE"; then
             echo "[OK] Image available on GHCR."
-            exit 0
+            ACTIVE_IMAGE="$GHCR_IMAGE"
+          else
+            echo "[WARN] GHCR unavailable. Attempting fallback: $MIRROR_IMAGE"
+            if pull_with_retry "$MIRROR_IMAGE"; then
+              echo "[OK] Image available on mirror.gcr.io (fallback)."
+              ACTIVE_IMAGE="$MIRROR_IMAGE"
+            fi
           fi
 
-          echo "[WARN] GHCR unavailable. Attempting fallback: $MIRROR_IMAGE"
-          if pull_with_retry "$MIRROR_IMAGE"; then
-            echo "[OK] Image available on mirror.gcr.io (fallback)."
-            exit 0
+          if [ -z "$ACTIVE_IMAGE" ]; then
+            echo "****************************************************************"
+            echo " ERROR: Failed to pull image from both registries!"
+            echo "   Primary:  $GHCR_IMAGE"
+            echo "   Fallback: $MIRROR_IMAGE"
+            echo " Remediation: Verify that the image is published on GHCR and"
+            echo "   Docker Hub, and that mirror.gcr.io has no ongoing outage."
+            echo "****************************************************************"
+            exit 1
           fi
 
-          echo "****************************************************************"
-          echo " ERROR: Failed to pull image from both registries!"
-          echo "   Primary:  $GHCR_IMAGE"
-          echo "   Fallback: $MIRROR_IMAGE"
-          echo " Remediation: Verify that the image is published on GHCR and"
-          echo "   Docker Hub, and that mirror.gcr.io has no ongoing outage."
-          echo "****************************************************************"
-          exit 1
+          echo "[INFO] Executing fast-fail DuckDB unit tests in container..."
+          docker run --rm -v "$(pwd):/app" -w /app "$ACTIVE_IMAGE" ./tests/run_unit_tests.sh
+          echo "[OK] Preflight unit tests passed successfully."
 
     - task: Bash@3
       displayName: 'Verify host disk reclaim'
@@ -131,8 +148,8 @@ stages:
 # ---------------------------------------------------------------------------
 - stage: convert
   displayName: 'Convert OSM PBF to GeoParquet'
-  dependsOn: warmup
-  condition: succeeded()
+  dependsOn: preflight
+  condition: succeeded('preflight')
 
   jobs:
   - job: convert
@@ -944,7 +961,7 @@ stages:
 
             echo "[INFO] Found input PBF: $INPUT_PBF"
             echo "[INFO] Filtering POI features (amenity, shop, tourism, leisure, etc.) via osmium..."
-            osmium tags-filter "$INPUT_PBF" nwr/amenity nwr/shop nwr/tourism nwr/leisure nwr/office nwr/craft nwr/healthcare nwr/historic nwr/aeroway nwr/cuisine nwr/railway=station,halt nwr/building=church,cathedral,chapel,mosque,synagogue,temple -o "$FILTERED_PBF" --overwrite
+            osmium tags-filter "$INPUT_PBF" nwr/amenity nwr/shop nwr/tourism nwr/leisure nwr/office nwr/craft nwr/healthcare nwr/historic nwr/aeroway nwr/cuisine nwr/railway=station,halt nwr/building=church,cathedral,chapel,mosque,synagogue,temple --output="$FILTERED_PBF" --overwrite
 
             echo "[INFO] Reclaiming disk space: removing raw input PBF immediately..."
             rm -rf "osm-data-$(OSM_REGION)" "$(OSM_REGION).osm.pbf"
@@ -960,6 +977,26 @@ stages:
 
           echo "[INFO] Converting filtered PBF to GeoParquet via DuckDB..."
           ./scripts/entrypoint.sh "$FILTERED_PBF" "$OUTPUT_PARQUET" "$COUNTRY_CODE"
+
+    - task: Bash@3
+      displayName: 'Audit GeoParquet quality'
+      condition: succeeded()
+      inputs:
+        targetType: 'inline'
+        script: |
+          set -e
+          OUTPUT_PARQUET="$(COUNTRY_CODE)_$(OSM_REGION).places.parquet"
+          if [ ! -f "$OUTPUT_PARQUET" ]; then
+            echo "##vso[task.logissue type=error]Expected output file $OUTPUT_PARQUET was not produced!"
+            exit 1
+          fi
+
+          POI_COUNT=$(duckdb -dark-mode -no-stdin -noheader -csv -c "SELECT count(*) FROM read_parquet('$OUTPUT_PARQUET');" 2>/dev/null | tail -n 1)
+          echo "[AUDIT] Total POIs for $(OSM_REGION): $POI_COUNT"
+
+          if [ -z "$POI_COUNT" ] || [ "$POI_COUNT" -eq 0 ]; then
+            echo "##vso[task.logissue type=warning]Generated GeoParquet for $(OSM_REGION) contains 0 POIs!"
+          fi
 
     - task: PublishPipelineArtifact@1
       enabled: true
@@ -999,7 +1036,7 @@ stages:
 - stage: release
   displayName: 'Publish GitHub Release'
   dependsOn: convert
-  condition: and(succeeded(), eq(parameters.publishGitHubRelease, true))
+  condition: and(succeeded('convert'), eq(parameters.publishGitHubRelease, true))
   jobs:
   - job: release
     displayName: 'Create GitHub Release with GeoParquet Assets'

@@ -43,7 +43,7 @@ cleanup() {
 trap cleanup EXIT INT TERM
 
 # Stream Osmium export through named pipe directly into DuckDB (zero intermediate disk I/O)
-(osmium export "$INPUT_PBF" --geometry-types=point,polygon -a type,id -f geojsonseq | tr -d '\036' > "$TMP_FIFO") &
+(set -o pipefail; osmium export "$INPUT_PBF" --geometry-types=point,polygon --attributes=type,id --output-format=geojsonseq | tr -d '\036' > "$TMP_FIFO") &
 OSMIUM_PID=$!
 
 sed \
@@ -56,9 +56,16 @@ sed \
 duckdb -dark-mode -no-stdin -c ".read $TMP_SQL"
 DUCKDB_EXIT=$?
 
-wait "$OSMIUM_PID" 2>/dev/null || true
+wait "$OSMIUM_PID"
+OSMIUM_EXIT=$?
+
 cleanup
 trap - EXIT INT TERM
+
+if [ $OSMIUM_EXIT -ne 0 ]; then
+    echo "[FAIL] Osmium export failed with exit code $OSMIUM_EXIT"
+    exit $OSMIUM_EXIT
+fi
 
 if [ $DUCKDB_EXIT -ne 0 ]; then
     echo "[FAIL] DuckDB export failed with exit code $DUCKDB_EXIT"
@@ -76,4 +83,5 @@ if [ ! -f "$OUTPUT_PARQUET" ]; then
 fi
 
 FILE_SIZE=$(du -sh "$OUTPUT_PARQUET" | cut -f1)
-echo "[OK] Successfully exported GeoParquet: $OUTPUT_PARQUET ($FILE_SIZE) in ${ELAPSED}s"
+POI_COUNT=$(duckdb -dark-mode -no-stdin -noheader -csv -c "SELECT count(*) FROM read_parquet('$OUTPUT_PARQUET');" 2>/dev/null | tail -n 1)
+echo "[OK] Successfully exported GeoParquet: $OUTPUT_PARQUET ($FILE_SIZE, $POI_COUNT POIs) in ${ELAPSED}s"
