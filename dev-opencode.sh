@@ -17,4 +17,4 @@ echo "[INFO] Building dev image (cached) ..."
 docker compose -f "$COMPOSE_FILE" build dev
 
 echo "[INFO] Starting interactive bash in dev container (opencode & agy available) ..."
-exec docker compose -f "$COMPOSE_FILE" run --rm dev "$@"
+exec docker compose -f "$COMPOSE_FILE" run --rm --service-ports dev "$@"

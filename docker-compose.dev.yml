@@ -20,6 +20,8 @@ services:
       - opencode-data:/home/ubuntu/.local/share/opencode
       - opencode-cache:/home/ubuntu/.cache
     working_dir: /app
+    ports:
+      - "4213:4213"
     entrypoint: ["/bin/bash"]
     stdin_open: true
     tty: true
