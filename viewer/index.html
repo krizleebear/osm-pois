@@ -1,0 +1,1215 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>OSM-POIS Gap Analysis & Quality Viewer</title>
+  
+  <!-- Leaflet CSS -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin=""/>
+  
+  <style>
+    :root {
+      --primary: #2563eb;
+      --primary-hover: #1d4ed8;
+      --bg-dark: #0f172a;
+      --bg-card: rgba(15, 23, 42, 0.92);
+      --border-color: #334155;
+      --text-main: #f8fafc;
+      --text-muted: #94a3b8;
+      --accent: #38bdf8;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body, html {
+      width: 100%;
+      height: 100%;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      overflow: hidden;
+      background: var(--bg-dark);
+      color: var(--text-main);
+    }
+
+    #app {
+      display: flex;
+      flex-direction: column;
+      width: 100%;
+      height: 100%;
+      position: relative;
+    }
+
+    /* Top Navigation Bar */
+    header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      height: 54px;
+      padding: 0 16px;
+      background: #1e293b;
+      border-bottom: 1px solid var(--border-color);
+      z-index: 1000;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+    }
+
+    .header-left {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .logo {
+      font-size: 1.1rem;
+      font-weight: 700;
+      background: linear-gradient(135deg, #38bdf8, #818cf8);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .logo-badge {
+      font-size: 0.7rem;
+      background: #334155;
+      color: #94a3b8;
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-weight: 600;
+      -webkit-text-fill-color: initial;
+    }
+
+    .header-center {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .header-right {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    /* Map container */
+    #map {
+      flex: 1;
+      width: 100%;
+      height: calc(100% - 54px);
+      z-index: 1;
+      background: #1e293b;
+    }
+
+    /* Floating Side Panel */
+    .sidebar {
+      position: absolute;
+      top: 66px;
+      left: 16px;
+      width: 360px;
+      max-height: calc(100% - 84px);
+      background: var(--bg-card);
+      backdrop-filter: blur(12px);
+      border: 1px solid var(--border-color);
+      border-radius: 10px;
+      z-index: 1000;
+      display: flex;
+      flex-direction: column;
+      box-shadow: 0 8px 32px rgba(0,0,0,0.4);
+      transition: transform 0.25s ease, opacity 0.25s ease;
+      overflow: hidden;
+    }
+
+    .sidebar.collapsed {
+      transform: translateX(-390px);
+      opacity: 0;
+      pointer-events: none;
+    }
+
+    .sidebar-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 12px 16px;
+      border-bottom: 1px solid var(--border-color);
+      background: rgba(30, 41, 59, 0.7);
+    }
+
+    .sidebar-header h2 {
+      font-size: 0.95rem;
+      font-weight: 600;
+      color: #e2e8f0;
+    }
+
+    .sidebar-body {
+      padding: 14px 16px;
+      overflow-y: auto;
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+    }
+
+    .panel-section {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .section-title {
+      font-size: 0.75rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: #94a3b8;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    /* Buttons & Controls */
+    button, .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      padding: 7px 12px;
+      font-size: 0.82rem;
+      font-weight: 600;
+      border-radius: 6px;
+      border: 1px solid var(--border-color);
+      background: #1e293b;
+      color: var(--text-main);
+      cursor: pointer;
+      transition: all 0.15s ease;
+    }
+
+    button:hover, .btn:hover {
+      background: #334155;
+      border-color: #475569;
+    }
+
+    button.primary, .btn.primary {
+      background: var(--primary);
+      border-color: var(--primary-hover);
+      color: white;
+    }
+
+    button.primary:hover, .btn.primary:hover {
+      background: var(--primary-hover);
+    }
+
+    .btn-sm {
+      padding: 4px 8px;
+      font-size: 0.75rem;
+    }
+
+    select, input[type="text"], input[type="number"] {
+      width: 100%;
+      padding: 7px 10px;
+      background: #0f172a;
+      border: 1px solid var(--border-color);
+      border-radius: 6px;
+      color: var(--text-main);
+      font-size: 0.82rem;
+      outline: none;
+    }
+
+    select:focus, input:focus {
+      border-color: var(--accent);
+    }
+
+    .slider-container {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+
+    .slider-label {
+      display: flex;
+      justify-content: space-between;
+      font-size: 0.78rem;
+      color: #cbd5e1;
+    }
+
+    input[type="range"] {
+      width: 100%;
+      accent-color: var(--accent);
+    }
+
+    /* Status Pill / Live Info */
+    .status-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 4px 10px;
+      font-size: 0.75rem;
+      border-radius: 999px;
+      font-weight: 600;
+      border: 1px solid #334155;
+      background: #0f172a;
+    }
+
+    .status-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: #94a3b8;
+    }
+
+    .status-dot.active { background: #10b981; }
+    .status-dot.warning { background: #f59e0b; }
+    .status-dot.busy { background: #38bdf8; animation: pulse 1.5s infinite; }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.3; }
+    }
+
+    /* File Drop Zone */
+    .drop-zone {
+      border: 2px dashed #475569;
+      border-radius: 8px;
+      padding: 16px;
+      text-align: center;
+      background: rgba(15, 23, 42, 0.4);
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    .drop-zone:hover, .drop-zone.drag-over {
+      border-color: var(--accent);
+      background: rgba(56, 189, 248, 0.08);
+    }
+
+    .drop-zone-text {
+      font-size: 0.8rem;
+      color: #cbd5e1;
+    }
+
+    .drop-zone-sub {
+      font-size: 0.7rem;
+      color: #64748b;
+      margin-top: 4px;
+    }
+
+    /* Inspector Card */
+    .inspector-card {
+      background: #0f172a;
+      border: 1px solid #334155;
+      border-radius: 6px;
+      padding: 10px;
+      font-size: 0.8rem;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .inspector-row {
+      display: flex;
+      justify-content: space-between;
+      gap: 8px;
+    }
+
+    .inspector-key {
+      color: #94a3b8;
+      font-weight: 500;
+      font-size: 0.75rem;
+    }
+
+    .inspector-val {
+      color: #f1f5f9;
+      font-weight: 600;
+      text-align: right;
+      word-break: break-all;
+    }
+
+    /* Category Legend */
+    .legend-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 6px;
+      max-height: 160px;
+      overflow-y: auto;
+      padding-right: 4px;
+    }
+
+    .legend-item {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 0.72rem;
+      color: #cbd5e1;
+    }
+
+    .legend-color {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+
+    /* Floating toggle button */
+    .sidebar-toggle-btn {
+      position: absolute;
+      top: 66px;
+      left: 16px;
+      z-index: 999;
+      background: var(--bg-card);
+      border: 1px solid var(--border-color);
+      border-radius: 8px;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+      padding: 8px 12px;
+    }
+
+    /* Alert Banner */
+    #banner {
+      position: absolute;
+      bottom: 24px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: rgba(15, 23, 42, 0.95);
+      border: 1px solid #38bdf8;
+      padding: 8px 18px;
+      border-radius: 30px;
+      font-size: 0.82rem;
+      z-index: 1000;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.5);
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      pointer-events: none;
+      transition: opacity 0.3s;
+    }
+
+    #banner.hidden {
+      opacity: 0;
+    }
+
+    /* Quick jump pills */
+    .quick-jumps {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+    }
+  </style>
+</head>
+<body>
+
+<div id="app">
+  <!-- Header -->
+  <header>
+    <div class="header-left">
+      <div class="logo">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#38bdf8" stroke-width="2"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"></path><circle cx="12" cy="10" r="3"></circle></svg>
+        OSM-POIS Gap Viewer
+        <span class="logo-badge">Overture Theme</span>
+      </div>
+      <div id="statusBadge" class="status-badge">
+        <span id="statusDot" class="status-dot"></span>
+        <span id="statusText">Initializing DuckDB-Wasm...</span>
+      </div>
+    </div>
+
+    <div class="header-center">
+      <div class="status-badge" id="zoomBadge">Zoom: --</div>
+      <div class="status-badge" id="poiCountBadge">POIs: 0 rendered</div>
+      <div class="status-badge" id="modeBadge">Mode: Standby</div>
+    </div>
+
+    <div class="header-right">
+      <label class="btn btn-sm primary" style="margin-bottom: 0;">
+        📂 Load Parquet
+        <input type="file" id="fileInput" accept=".parquet" style="display: none;">
+      </label>
+      <button id="toggleSidebarBtn" class="btn btn-sm">Sidebar</button>
+    </div>
+  </header>
+
+  <!-- Map Canvas -->
+  <div id="map"></div>
+
+  <!-- Sidebar -->
+  <aside id="sidebar" class="sidebar">
+    <div class="sidebar-header">
+      <h2>Inspection & Controls</h2>
+      <button id="closeSidebarBtn" class="btn btn-sm" style="padding: 2px 6px;">✕</button>
+    </div>
+
+    <div class="sidebar-body">
+      <!-- File Loading Section -->
+      <div class="panel-section">
+        <div class="section-title">
+          <span>Active Dataset</span>
+          <span id="datasetSize" style="font-size: 0.7rem; color: #64748b;">No file</span>
+        </div>
+        
+        <div id="dropZone" class="drop-zone">
+          <div class="drop-zone-text">Drag & drop <code>.places.parquet</code> here</div>
+          <div class="drop-zone-sub">or use preset / load button above</div>
+        </div>
+
+        <div style="display: flex; gap: 6px; margin-top: 6px;">
+          <select id="presetSelect">
+            <option value="">-- Load Preset / Sample --</option>
+            <option value="MC_monaco.places.parquet">Monaco (MC_monaco.places.parquet)</option>
+            <option value="DE_germany.places.parquet">Germany (DE_germany.places.parquet)</option>
+          </select>
+          <button id="loadPresetBtn" class="btn btn-sm primary">Load</button>
+        </div>
+      </div>
+
+      <!-- Quick Extent Jumps -->
+      <div class="panel-section">
+        <div class="section-title">Quick Extent Jump</div>
+        <div class="quick-jumps">
+          <button class="btn btn-sm" onclick="flyToBbox(7.41, 43.72, 7.44, 43.75)">Monaco</button>
+          <button class="btn btn-sm" onclick="flyToBbox(13.37, 52.50, 13.43, 52.54)">Berlin Center</button>
+          <button class="btn btn-sm" onclick="flyToBbox(11.55, 48.12, 11.60, 48.16)">Munich</button>
+          <button class="btn btn-sm" onclick="flyToBbox(9.96, 53.53, 10.02, 53.57)">Hamburg</button>
+          <button class="btn btn-sm" id="fitDatasetBtn" disabled>Fit Dataset</button>
+        </div>
+      </div>
+
+      <!-- Gap Analysis & Basemap Controls -->
+      <div class="panel-section">
+        <div class="section-title">OSM Basemap & Gap Detection</div>
+        <select id="basemapSelect">
+          <option value="osm_fr" selected>OpenStreetMap Standard (Icons &amp; POIs visible)</option>
+          <option value="carto_voyager">CARTO Voyager (Detailed OSM + POIs)</option>
+          <option value="carto_light">CARTO Positron (High Contrast Light)</option>
+          <option value="carto_dark">CARTO Dark Matter</option>
+          <option value="opentopo">OpenTopoMap</option>
+        </select>
+
+        <div class="slider-container">
+          <div class="slider-label">
+            <span>OSM Basemap Opacity</span>
+            <span id="basemapOpacityVal">100%</span>
+          </div>
+          <input type="range" id="basemapOpacitySlider" min="10" max="100" value="100">
+        </div>
+
+        <div class="slider-container">
+          <div class="slider-label">
+            <span>POI Overlay Opacity</span>
+            <span id="poiOpacityVal">85%</span>
+          </div>
+          <input type="range" id="poiOpacitySlider" min="10" max="100" value="85">
+        </div>
+
+        <div style="display: flex; gap: 6px; margin-top: 4px;">
+          <button id="blinkBtn" class="btn btn-sm" style="flex: 1;">⚡ Blink Overlay (Spot Gaps)</button>
+        </div>
+      </div>
+
+      <!-- Density & Zoom-Adaptive LOD -->
+      <div class="panel-section">
+        <div class="section-title">Level of Detail (LOD) Rules</div>
+        
+        <div class="slider-container">
+          <div class="slider-label">
+            <span>Full Detail Zoom Threshold</span>
+            <span id="detailZoomVal">Zoom ≥ 16</span>
+          </div>
+          <input type="range" id="detailZoomSlider" min="14" max="18" value="16">
+          <div style="font-size: 0.68rem; color: #64748b;">At this zoom or higher, ALL POIs in viewport are rendered. Below this, POIs are sampled to prevent browser freeze.</div>
+        </div>
+
+        <div class="slider-container" style="margin-top: 6px;">
+          <div class="slider-label">
+            <span>Max POIs in Overview Mode</span>
+            <span id="overviewLimitVal">500</span>
+          </div>
+          <input type="range" id="overviewLimitSlider" min="100" max="2000" step="100" value="500">
+        </div>
+      </div>
+
+      <!-- Filter Controls -->
+      <div class="panel-section">
+        <div class="section-title">Filters</div>
+        <input type="text" id="nameFilterInput" placeholder="Filter by Name (e.g. Aldi, Cafe, Apotheke)...">
+        <select id="categoryFilterSelect" style="margin-top: 6px;">
+          <option value="">All Categories</option>
+        </select>
+      </div>
+
+      <!-- Legend -->
+      <div class="panel-section">
+        <div class="section-title">Category Legend</div>
+        <div id="legendGrid" class="legend-grid">
+          <!-- Populated by JS -->
+        </div>
+      </div>
+
+      <!-- Feature Inspector -->
+      <div class="panel-section" id="inspectorSection">
+        <div class="section-title">Selected POI Inspector</div>
+        <div id="inspectorContent" class="inspector-card" style="color: #64748b; text-align: center;">
+          Click any POI circle on the map to inspect its Overture schema fields.
+        </div>
+      </div>
+    </div>
+  </aside>
+
+  <!-- Notification Banner -->
+  <div id="banner" class="hidden">
+    <span id="bannerText">Zoom in closer (≥ 12) to view POIs.</span>
+  </div>
+</div>
+
+<!-- Leaflet JS -->
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+
+<!-- DuckDB-Wasm ES Module Script -->
+<script type="module">
+  import * as duckdb from 'https://cdn.jsdelivr.net/npm/@duckdb/duckdb-wasm@1.29.0/+esm';
+
+  // State
+  let db = null;
+  let conn = null;
+  let currentParquetName = null;
+  let datasetBounds = null;
+  let totalDatasetRows = 0;
+  let isQueryInProgress = false;
+  let pendingQueryTimeout = null;
+  let blinkInterval = null;
+
+  // Category Color Map (Overture groups)
+  const CATEGORY_COLORS = {
+    'food_and_drink': '#f97316',      // Orange
+    'restaurant': '#f97316',
+    'cafe': '#ea580c',
+    'fast_food_restaurant': '#f97316',
+    'bar': '#fb923c',
+    'pub': '#fb923c',
+    'bakery': '#d97706',
+    
+    'shopping': '#3b82f6',            // Blue
+    'retail': '#3b82f6',
+    'supermarket': '#2563eb',
+    'clothing_store': '#60a5fa',
+    'convenience_store': '#3b82f6',
+    
+    'health_and_medical': '#ef4444',  // Red
+    'hospital': '#dc2626',
+    'pharmacy': '#ef4444',
+    'doctors_office': '#f87171',
+    'dentist': '#f87171',
+    
+    'accommodation': '#a855f7',       // Purple
+    'hotel': '#9333ea',
+    'motel': '#a855f7',
+    'guest_house': '#c084fc',
+    
+    'arts_and_entertainment': '#eab308', // Gold
+    'museum': '#ca8a04',
+    'monument': '#eab308',
+    'sculpture_statue': '#facc15',
+    'cinema': '#eab308',
+    'street_art': '#fde047',
+    
+    'services': '#14b8a6',            // Teal
+    'banks': '#0d9488',
+    'atms': '#14b8a6',
+    'post_office': '#2dd4bf',
+    'post_box': '#0f766e',
+    'hair_salon': '#14b8a6',
+    
+    'transportation': '#0284c7',      // Sky Blue
+    'train_station': '#0369a1',
+    'light_rail_and_subway_station': '#0284c7',
+    'bus_station': '#38bdf8',
+    'parking': '#0284c7',
+    'gas_station': '#0284c7',
+    'ev_charging_station': '#38bdf8',
+    'bike_rentals': '#06b6d4',
+    
+    'civic_and_social': '#6366f1',    // Indigo
+    'police_station': '#4f46e5',
+    'school': '#6366f1',
+    'library': '#818cf8',
+    'catholic_church': '#6366f1',
+    'evangelical_church': '#6366f1',
+    'church_cathedral': '#6366f1',
+    'place_of_worship': '#6366f1',
+    
+    'default': '#ec4899'              // Vibrant Pink for unmatched/general
+  };
+
+  function getCategoryColor(cat) {
+    if (!cat) return CATEGORY_COLORS['default'];
+    cat = cat.toLowerCase();
+    if (CATEGORY_COLORS[cat]) return CATEGORY_COLORS[cat];
+    for (const [key, color] of Object.entries(CATEGORY_COLORS)) {
+      if (cat.includes(key)) return color;
+    }
+    return CATEGORY_COLORS['default'];
+  }
+
+  // Populate Legend
+  function buildLegend() {
+    const legendContainer = document.getElementById('legendGrid');
+    legendContainer.innerHTML = '';
+    const mainGroups = [
+      { name: 'Food & Drink', color: '#f97316' },
+      { name: 'Shopping / Retail', color: '#3b82f6' },
+      { name: 'Health & Medical', color: '#ef4444' },
+      { name: 'Accommodation', color: '#a855f7' },
+      { name: 'Arts & Culture', color: '#eab308' },
+      { name: 'Services & Banks', color: '#14b8a6' },
+      { name: 'Transportation', color: '#0284c7' },
+      { name: 'Civic & Worship', color: '#6366f1' },
+      { name: 'Other POIs', color: '#ec4899' }
+    ];
+    mainGroups.forEach(g => {
+      const item = document.createElement('div');
+      item.className = 'legend-item';
+      item.innerHTML = `<span class="legend-color" style="background:${g.color}"></span><span>${g.name}</span>`;
+      legendContainer.appendChild(item);
+    });
+  }
+  buildLegend();
+
+  // Initialize Map
+  const map = L.map('map', {
+    center: [43.7384, 7.4246], // Monaco default
+    zoom: 15,
+    minZoom: 3,
+    maxZoom: 20,
+    preferCanvas: true
+  });
+
+  // Basemap Tile Layers (Reliable community & CDN mirrors without OSM Foundation 403 blocks)
+  const tileLayers = {
+    osm_fr: L.tileLayer('https://{s}.tile.openstreetmap.fr/osmfr/{z}/{x}/{y}.png', {
+      maxZoom: 20,
+      subdomains: ['a', 'b', 'c'],
+      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; OpenStreetMap France'
+    }),
+    carto_voyager: L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
+      maxZoom: 20,
+      subdomains: 'abcd',
+      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>'
+    }),
+    carto_light: L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
+      maxZoom: 20,
+      subdomains: 'abcd',
+      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>'
+    }),
+    carto_dark: L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+      maxZoom: 20,
+      subdomains: 'abcd',
+      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>'
+    }),
+    opentopo: L.tileLayer('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png', {
+      maxZoom: 17,
+      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors, SRTM | OpenTopoMap'
+    })
+  };
+
+  let activeBasemap = tileLayers.osm_fr;
+  activeBasemap.addTo(map);
+
+  // POI Layer Group (Canvas renderer)
+  const poiLayerGroup = L.layerGroup().addTo(map);
+
+  // Global helper for quick bounds
+  window.flyToBbox = function(minLon, minLat, maxLon, maxLat) {
+    map.fitBounds([[minLat, minLon], [maxLat, maxLon]], { padding: [30, 30] });
+  };
+
+  // Initialize DuckDB-Wasm
+  async function initDuckDB() {
+    const statusDot = document.getElementById('statusDot');
+    const statusText = document.getElementById('statusText');
+    statusDot.className = 'status-dot busy';
+    statusText.textContent = 'Loading DuckDB-Wasm...';
+
+    try {
+      const JSDELIVR_BUNDLES = duckdb.getJsDelivrBundles();
+      const bundle = await duckdb.selectBundle(JSDELIVR_BUNDLES);
+      
+      const worker_url = URL.createObjectURL(
+        new Blob([`importScripts("${bundle.mainWorker}");`], { type: 'text/javascript' })
+      );
+      const worker = new Worker(worker_url);
+      const logger = new duckdb.ConsoleLogger();
+      db = new duckdb.AsyncDuckDB(logger, worker);
+      await db.instantiate(bundle.mainModule, bundle.pthreadWorker);
+      URL.revokeObjectURL(worker_url);
+
+      conn = await db.connect();
+      statusDot.className = 'status-dot active';
+      statusText.textContent = 'DuckDB Ready';
+
+      // Auto-load Monaco sample if available locally
+      tryAutoLoadPreset();
+    } catch (err) {
+      console.error('Failed to init DuckDB-Wasm:', err);
+      statusDot.className = 'status-dot warning';
+      statusText.textContent = 'DuckDB Error: ' + err.message;
+      showBanner('Failed to load DuckDB-Wasm. Please ensure an active internet connection.', 5000);
+    }
+  }
+
+  // Load Parquet File from File Handle
+  async function loadParquetFile(file) {
+    if (!db || !conn) return;
+    const statusDot = document.getElementById('statusDot');
+    const statusText = document.getElementById('statusText');
+    statusDot.className = 'status-dot busy';
+    statusText.textContent = `Loading ${file.name}...`;
+    showBanner(`Registering Parquet file: ${file.name}...`);
+
+    try {
+      currentParquetName = file.name;
+      await db.registerFileHandle(currentParquetName, file, duckdb.DuckDBDataProtocol.BROWSER_FILEREADER, true);
+      await postLoadParquet();
+    } catch (err) {
+      console.error('Error reading parquet:', err);
+      statusDot.className = 'status-dot warning';
+      statusText.textContent = 'Read error: ' + err.message;
+      showBanner('Error reading parquet: ' + err.message, 5000);
+    }
+  }
+
+  // Load Parquet via URL
+  async function loadParquetURL(url, displayName) {
+    if (!db || !conn) return;
+    const statusDot = document.getElementById('statusDot');
+    const statusText = document.getElementById('statusText');
+    statusDot.className = 'status-dot busy';
+    statusText.textContent = `Fetching ${displayName}...`;
+    showBanner(`Fetching ${displayName}...`);
+
+    try {
+      // Test if URL exists, fallback to ../ if 404
+      let targetUrl = url;
+      try {
+        const testResp = await fetch(url, { method: 'HEAD' });
+        if (!testResp.ok && !url.startsWith('http') && !url.startsWith('../')) {
+          const fallbackResp = await fetch('../' + url, { method: 'HEAD' });
+          if (fallbackResp.ok) targetUrl = '../' + url;
+        }
+      } catch (_) {}
+
+      currentParquetName = displayName;
+      await db.registerFileURL(currentParquetName, targetUrl, duckdb.DuckDBDataProtocol.HTTP, false);
+      await postLoadParquet();
+    } catch (err) {
+      console.error('Error fetching parquet:', err);
+      statusDot.className = 'status-dot warning';
+      statusText.textContent = 'Fetch error: ' + err.message;
+      showBanner('Failed to fetch file: ' + err.message, 4000);
+    }
+  }
+
+  // Post-Load: Fetch row counts, extent, categories
+  async function postLoadParquet() {
+    const statusDot = document.getElementById('statusDot');
+    const statusText = document.getElementById('statusText');
+
+    // Total Count & Extent
+    const statsQuery = `
+      SELECT 
+        count(*) as total,
+        min(bbox.xmin) as min_lon,
+        max(bbox.xmax) as max_lon,
+        min(bbox.ymin) as min_lat,
+        max(bbox.ymax) as max_lat
+      FROM '${currentParquetName}';
+    `;
+    const res = await conn.query(statsQuery);
+    const row = res.toArray()[0].toJSON();
+    totalDatasetRows = Number(row.total);
+    datasetBounds = {
+      minLon: Number(row.min_lon),
+      maxLon: Number(row.max_lon),
+      minLat: Number(row.min_lat),
+      maxLat: Number(row.max_lat)
+    };
+
+    document.getElementById('datasetSize').textContent = `${totalDatasetRows.toLocaleString()} POIs`;
+    document.getElementById('fitDatasetBtn').disabled = false;
+
+    // Populate Category Filter dropdown with top 50 categories
+    const catQuery = `
+      SELECT categories.primary as cat, count(*) as cnt
+      FROM '${currentParquetName}'
+      WHERE categories.primary IS NOT NULL
+      GROUP BY categories.primary
+      ORDER BY cnt DESC
+      LIMIT 50;
+    `;
+    const catRes = await conn.query(catQuery);
+    const catSelect = document.getElementById('categoryFilterSelect');
+    catSelect.innerHTML = '<option value="">All Categories</option>';
+    catRes.toArray().forEach(r => {
+      const c = r.toJSON();
+      const opt = document.createElement('option');
+      opt.value = c.cat;
+      opt.textContent = `${c.cat} (${Number(c.cnt).toLocaleString()})`;
+      catSelect.appendChild(opt);
+    });
+
+    statusDot.className = 'status-dot active';
+    statusText.textContent = `${currentParquetName} (${totalDatasetRows.toLocaleString()} POIs)`;
+    showBanner(`Loaded ${currentParquetName} with ${totalDatasetRows.toLocaleString()} POIs`, 3000);
+
+    // Zoom to bounds if valid
+    if (datasetBounds.minLat && datasetBounds.maxLat) {
+      map.fitBounds([
+        [datasetBounds.minLat, datasetBounds.minLon],
+        [datasetBounds.maxLat, datasetBounds.maxLon]
+      ], { maxZoom: 16 });
+    }
+
+    // Trigger initial viewport query
+    updatePOIs();
+  }
+
+  // Attempt to auto-load Monaco sample if available relative to page
+  async function tryAutoLoadPreset() {
+    const candidates = ['MC_monaco.places.parquet', '../MC_monaco.places.parquet'];
+    for (const path of candidates) {
+      try {
+        const resp = await fetch(path, { method: 'HEAD' });
+        if (resp.ok) {
+          loadParquetURL(path, 'MC_monaco.places.parquet');
+          break;
+        }
+      } catch (_) {}
+    }
+  }
+
+  // Viewport Query & POI Rendering
+  async function updatePOIs() {
+    if (!conn || !currentParquetName || isQueryInProgress) return;
+
+    const zoom = map.getZoom();
+    document.getElementById('zoomBadge').textContent = `Zoom: ${zoom}`;
+
+    const bounds = map.getBounds();
+    const minLon = bounds.getWest();
+    const maxLon = bounds.getEast();
+    const minLat = bounds.getSouth();
+    const maxLat = bounds.getNorth();
+
+    const detailZoomThreshold = parseInt(document.getElementById('detailZoomSlider').value, 10);
+    const overviewLimit = parseInt(document.getElementById('overviewLimitSlider').value, 10);
+    const nameFilter = document.getElementById('nameFilterInput').value.trim();
+    const catFilter = document.getElementById('categoryFilterSelect').value;
+
+    const modeBadge = document.getElementById('modeBadge');
+    const poiCountBadge = document.getElementById('poiCountBadge');
+
+    // Rule: Don't render individual POIs if zoomed out too far (< 12)
+    if (zoom < 12) {
+      poiLayerGroup.clearLayers();
+      modeBadge.textContent = 'Mode: Macro (< 12)';
+      modeBadge.style.borderColor = '#64748b';
+      poiCountBadge.textContent = 'POIs: Zoom in';
+      showBanner(`🔎 Zoom level ${zoom} (< 12). Zoom closer to inspect POIs.`);
+      return;
+    }
+
+    let isFullDetail = (zoom >= detailZoomThreshold);
+    let queryLimit = isFullDetail ? 10000 : overviewLimit;
+
+    if (isFullDetail) {
+      modeBadge.textContent = `Mode: Full Detail (All POIs)`;
+      modeBadge.style.borderColor = '#10b981';
+    } else {
+      modeBadge.textContent = `Mode: Sampled (${overviewLimit} max)`;
+      modeBadge.style.borderColor = '#f59e0b';
+      showBanner(`ℹ️ Overview Mode (${overviewLimit} max). Zoom to z${detailZoomThreshold}+ for all POIs.`);
+    }
+
+    isQueryInProgress = true;
+    const startTime = performance.now();
+
+    try {
+      let filterClauses = [];
+      if (nameFilter) {
+        filterClauses.push(`lower(names.primary) LIKE '%${nameFilter.toLowerCase().replace(/'/g, "''")}%'`);
+      }
+      if (catFilter) {
+        filterClauses.push(`categories.primary = '${catFilter.replace(/'/g, "''")}'`);
+      }
+      const extraWhere = filterClauses.length > 0 ? 'AND ' + filterClauses.join(' AND ') : '';
+
+      const sql = `
+        SELECT 
+          id,
+          names.primary AS name,
+          categories.primary AS category,
+          basic_category,
+          operating_status,
+          (bbox.xmin + bbox.xmax) / 2 AS lon,
+          (bbox.ymin + bbox.ymax) / 2 AS lat,
+          addresses[1].freeform AS address,
+          websites[1] AS website,
+          phones[1] AS phone
+        FROM '${currentParquetName}'
+        WHERE (bbox.xmin + bbox.xmax) / 2 BETWEEN ${minLon} AND ${maxLon}
+          AND (bbox.ymin + bbox.ymax) / 2 BETWEEN ${minLat} AND ${maxLat}
+          ${extraWhere}
+        LIMIT ${queryLimit};
+      `;
+
+      const result = await conn.query(sql);
+      const rows = result.toArray().map(r => r.toJSON());
+      const elapsed = Math.round(performance.now() - startTime);
+
+      renderMarkers(rows, isFullDetail);
+      poiCountBadge.textContent = `POIs: ${rows.length.toLocaleString()} (${elapsed}ms)`;
+    } catch (err) {
+      console.error('Viewport query error:', err);
+    } finally {
+      isQueryInProgress = false;
+    }
+  }
+
+  // Render CircleMarkers with Canvas
+  function renderMarkers(rows, isFullDetail) {
+    poiLayerGroup.clearLayers();
+
+    const poiOpacity = parseFloat(document.getElementById('poiOpacitySlider').value) / 100;
+    const radius = map.getZoom() >= 17 ? 7 : (map.getZoom() >= 15 ? 5 : 3.5);
+
+    rows.forEach(poi => {
+      const lat = Number(poi.lat);
+      const lon = Number(poi.lon);
+      if (isNaN(lat) || isNaN(lon)) return;
+
+      const color = getCategoryColor(poi.category || poi.basic_category);
+
+      const marker = L.circleMarker([lat, lon], {
+        radius: radius,
+        fillColor: color,
+        color: '#ffffff',
+        weight: 1.2,
+        opacity: poiOpacity,
+        fillOpacity: poiOpacity
+      });
+
+      // Simple tooltip on hover
+      const displayName = poi.name ? poi.name : `<i>(Unnamed ${poi.category || 'POI'})</i>`;
+      marker.bindTooltip(`<b>${displayName}</b><br><span style="color:${color}">${poi.category || poi.basic_category || 'place'}</span>`, {
+        direction: 'top',
+        offset: [0, -radius]
+      });
+
+      // Click to inspect
+      marker.on('click', () => {
+        inspectPOI(poi);
+      });
+
+      poiLayerGroup.addLayer(marker);
+    });
+  }
+
+  // Inspect Feature in Sidebar
+  function inspectPOI(poi) {
+    const inspector = document.getElementById('inspectorContent');
+    const color = getCategoryColor(poi.category);
+
+    let osmUrl = null;
+    if (poi.id && poi.id.startsWith('osm:')) {
+      osmUrl = `https://www.openstreetmap.org/${poi.id.replace('osm:', '')}`;
+    }
+
+    inspector.innerHTML = `
+      <div style="font-size: 0.95rem; font-weight: 700; color: #f8fafc; border-bottom: 1px solid #334155; padding-bottom: 4px;">
+        ${poi.name || '<span style="color:#94a3b8;">Unnamed POI</span>'}
+      </div>
+      <div class="inspector-row">
+        <span class="inspector-key">Category:</span>
+        <span class="inspector-val" style="color:${color};">${poi.category || 'N/A'}</span>
+      </div>
+      <div class="inspector-row">
+        <span class="inspector-key">Basic Category:</span>
+        <span class="inspector-val">${poi.basic_category || 'N/A'}</span>
+      </div>
+      <div class="inspector-row">
+        <span class="inspector-key">Operating Status:</span>
+        <span class="inspector-val">${poi.operating_status || 'operational'}</span>
+      </div>
+      <div class="inspector-row">
+        <span class="inspector-key">Address:</span>
+        <span class="inspector-val">${poi.address || 'N/A'}</span>
+      </div>
+      <div class="inspector-row">
+        <span class="inspector-key">Coordinates:</span>
+        <span class="inspector-val">${Number(poi.lat).toFixed(5)}, ${Number(poi.lon).toFixed(5)}</span>
+      </div>
+      ${poi.website ? `
+      <div class="inspector-row">
+        <span class="inspector-key">Website:</span>
+        <span class="inspector-val"><a href="${poi.website}" target="_blank" style="color:#38bdf8;">Link ↗</a></span>
+      </div>` : ''}
+      ${poi.phone ? `
+      <div class="inspector-row">
+        <span class="inspector-key">Phone:</span>
+        <span class="inspector-val">${poi.phone}</span>
+      </div>` : ''}
+      ${osmUrl ? `
+      <div style="margin-top: 6px; padding-top: 6px; border-top: 1px solid #334155; text-align: center;">
+        <a href="${osmUrl}" target="_blank" class="btn btn-sm" style="width: 100%; color: #38bdf8; border-color: #38bdf8;">
+          Inspect OSM Object (${poi.id}) ↗
+        </a>
+      </div>` : ''}
+    `;
+
+    // Ensure sidebar is open to see the inspection
+    document.getElementById('sidebar').classList.remove('collapsed');
+  }
+
+  // Show Temporary Notification Banner
+  let bannerTimer = null;
+  function showBanner(msg, duration = 3000) {
+    const banner = document.getElementById('banner');
+    document.getElementById('bannerText').textContent = msg;
+    banner.classList.remove('hidden');
+    if (bannerTimer) clearTimeout(bannerTimer);
+    if (duration > 0) {
+      bannerTimer = setTimeout(() => {
+        banner.classList.add('hidden');
+      }, duration);
+    }
+  }
+
+  // Debounced Map Movement Listener
+  map.on('moveend zoomend', () => {
+    if (pendingQueryTimeout) clearTimeout(pendingQueryTimeout);
+    pendingQueryTimeout = setTimeout(updatePOIs, 180);
+  });
+
+  // Event Listeners for UI Controls
+  document.getElementById('fileInput').addEventListener('change', (e) => {
+    if (e.target.files.length > 0) {
+      loadParquetFile(e.target.files[0]);
+    }
+  });
+
+  // Drag & Drop
+  const dropZone = document.getElementById('dropZone');
+  dropZone.addEventListener('dragover', (e) => {
+    e.preventDefault();
+    dropZone.classList.add('drag-over');
+  });
+  dropZone.addEventListener('dragleave', () => dropZone.classList.remove('drag-over'));
+  dropZone.addEventListener('drop', (e) => {
+    e.preventDefault();
+    dropZone.classList.remove('drag-over');
+    if (e.dataTransfer.files.length > 0) {
+      loadParquetFile(e.dataTransfer.files[0]);
+    }
+  });
+  dropZone.addEventListener('click', () => document.getElementById('fileInput').click());
+
+  // Preset selector
+  document.getElementById('loadPresetBtn').addEventListener('click', () => {
+    const val = document.getElementById('presetSelect').value;
+    if (val) loadParquetURL(val, val);
+  });
+
+  // Fit Dataset Button
+  document.getElementById('fitDatasetBtn').addEventListener('click', () => {
+    if (datasetBounds) {
+      map.fitBounds([[datasetBounds.minLat, datasetBounds.minLon], [datasetBounds.maxLat, datasetBounds.maxLon]]);
+    }
+  });
+
+  // Basemap switcher
+  document.getElementById('basemapSelect').addEventListener('change', (e) => {
+    const selected = tileLayers[e.target.value];
+    if (selected && selected !== activeBasemap) {
+      map.removeLayer(activeBasemap);
+      activeBasemap = selected;
+      activeBasemap.addTo(map);
+      activeBasemap.bringToBack();
+      // Apply current opacity
+      const op = parseFloat(document.getElementById('basemapOpacitySlider').value) / 100;
+      activeBasemap.setOpacity(op);
+    }
+  });
+
+  // Opacity Sliders
+  document.getElementById('basemapOpacitySlider').addEventListener('input', (e) => {
+    const val = e.target.value;
+    document.getElementById('basemapOpacityVal').textContent = `${val}%`;
+    if (activeBasemap) activeBasemap.setOpacity(parseFloat(val) / 100);
+  });
+
+  document.getElementById('poiOpacitySlider').addEventListener('input', (e) => {
+    const val = e.target.value;
+    document.getElementById('poiOpacityVal').textContent = `${val}%`;
+    updatePOIs();
+  });
+
+  // LOD sliders
+  document.getElementById('detailZoomSlider').addEventListener('input', (e) => {
+    document.getElementById('detailZoomVal').textContent = `Zoom ≥ ${e.target.value}`;
+    updatePOIs();
+  });
+
+  document.getElementById('overviewLimitSlider').addEventListener('input', (e) => {
+    document.getElementById('overviewLimitVal').textContent = e.target.value;
+    updatePOIs();
+  });
+
+  // Filters
+  document.getElementById('nameFilterInput').addEventListener('input', () => {
+    if (pendingQueryTimeout) clearTimeout(pendingQueryTimeout);
+    pendingQueryTimeout = setTimeout(updatePOIs, 250);
+  });
+
+  document.getElementById('categoryFilterSelect').addEventListener('change', updatePOIs);
+
+  // Blink Feature for Visual Gap Spotting
+  document.getElementById('blinkBtn').addEventListener('click', () => {
+    const btn = document.getElementById('blinkBtn');
+    if (blinkInterval) {
+      clearInterval(blinkInterval);
+      blinkInterval = null;
+      btn.textContent = '⚡ Blink Overlay (Spot Gaps)';
+      map.addLayer(poiLayerGroup);
+    } else {
+      btn.textContent = '⏹ Stop Blinking';
+      let visible = true;
+      blinkInterval = setInterval(() => {
+        if (visible) {
+          map.removeLayer(poiLayerGroup);
+        } else {
+          map.addLayer(poiLayerGroup);
+        }
+        visible = !visible;
+      }, 500);
+    }
+  });
+
+  // Sidebar toggle
+  const sidebar = document.getElementById('sidebar');
+  document.getElementById('toggleSidebarBtn').addEventListener('click', () => {
+    sidebar.classList.toggle('collapsed');
+  });
+  document.getElementById('closeSidebarBtn').addEventListener('click', () => {
+    sidebar.classList.add('collapsed');
+  });
+
+  // File:// protocol detection warning
+  if (window.location.protocol === 'file:') {
+    alert('Notice: Browsers restrict WebAssembly and Web Workers on file:// URLs. If DuckDB-Wasm does not initialize, please serve this viewer via a local HTTP server (e.g. `npx serve viewer`, `python3 -m http.server`, or VS Code Live Server).');
+  }
+
+  // Start DuckDB initialization
+  initDuckDB();
+</script>
+
+</body>
+</html>
