@@ -9,7 +9,6 @@ SELECT
 FROM read_csv('__REPO_ROOT__/mappings/overture_categories.csv', header=False);
 
 -- Load Category Mapping Rules (overture_to_osm_categories)
--- Format: overture_category;key=val,key2=val2
 CREATE TEMP TABLE category_rules AS
 WITH raw_rules AS (
     SELECT 
@@ -20,7 +19,6 @@ WITH raw_rules AS (
 SELECT 
     overture_cat,
     tag_expr,
-    -- Match primary key/value for fast joining
     split_part(split_part(tag_expr, ',', 1), '=', 1) AS primary_key,
     split_part(split_part(tag_expr, ',', 1), '=', 2) AS primary_val
 FROM raw_rules;
@@ -28,7 +26,7 @@ FROM raw_rules;
 -- Extract Raw Features from OSM PBF
 CREATE TEMP TABLE raw_features AS
 SELECT 
-    'osm:node/' || osm_id AS id,
+    'osm:node/' || COALESCE(osm_id, '') AS id,
     name,
     "name:en" AS name_en,
     "name:de" AS name_de,
@@ -64,7 +62,7 @@ WHERE name IS NOT NULL
 UNION ALL
 
 SELECT 
-    'osm:way/' || osm_id AS id,
+    'osm:way/' || COALESCE(osm_way_id, osm_id, '') AS id,
     name,
     "name:en" AS name_en,
     "name:de" AS name_de,
@@ -78,6 +76,7 @@ SELECT
     historic,
     sport,
     aeroway,
+    building,
     operator,
     brand,
     "brand:wikidata" AS brand_wikidata,
