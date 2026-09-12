@@ -2129,3 +2129,6 @@ mountain_hut;tourism=alpine_hut
 mountain_hut;tourism=wilderness_hut
 civic_organization;office=association
 civic_organization;office=foundation
+funeral_service;shop=funeral_directors
+tailor;shop=tailor
+tailor;craft=tailor

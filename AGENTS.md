@@ -59,6 +59,9 @@ When modifying or generating code in this repository, you **MUST** follow these 
    * `mappings/overture_categories.csv` uses semicolons as column separators (`category;[hierarchy]`). DuckDB's `read_csv` parses this automatically into `column0` and `column1`. Do not use manual string slicing unless necessary.
 5. **ODbL License Preservation**:
    * In the `sources` array of the generated GeoParquet, `dataset: 'OpenStreetMap'` and `license: 'ODbL-1.0'` must always be preserved.
+6. **Preserve Granularity (No Lossy Over-Generalization)**:
+   * Do not map distinct, specialized OSM concepts to broad, inaccurate parent buckets (e.g. `amenity=public_bookcase` MUST NOT be mapped to `library`, `waste_basket` or `bench` must not be force-mapped to unrelated commercial places).
+   * It is strictly preferable to preserve the original OSM tag name (e.g. `categories.primary = 'public_bookcase'`) rather than artificially forcing it into an ill-fitting Overture bucket. Downstream systems cannot undo lossy generalizations.
 
 ---
 
