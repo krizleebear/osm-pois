@@ -62,6 +62,12 @@ When modifying or generating code in this repository, you **MUST** follow these 
 6. **Preserve Granularity (No Lossy Over-Generalization)**:
    * Do not map distinct, specialized OSM concepts to broad, inaccurate parent buckets (e.g. `amenity=public_bookcase` MUST NOT be mapped to `library`, `waste_basket` or `bench` must not be force-mapped to unrelated commercial places).
    * It is strictly preferable to preserve the original OSM tag name (e.g. `categories.primary = 'public_bookcase'`) rather than artificially forcing it into an ill-fitting Overture bucket. Downstream systems cannot undo lossy generalizations.
+7. **Triad Invariant for Tag Additions (Config -> Filter -> SQL)**:
+   * Whenever a new OSM tag or subtag is introduced (e.g. `cuisine`, `railway`, `station`, `operator`):
+     1. Add it to `[points]` AND `[multipolygons]` in `config/osmconf.ini`.
+     2. Add it to `osmium tags-filter` in `azure-pipelines.yml`.
+     3. Add it to `raw_features` and category mapping in `scripts/export_pois.sql`.
+   * Omitting any of these three steps will cause silent data loss or NULL values.
 
 ---
 
@@ -87,6 +93,9 @@ When querying generated parquet files, always use non-interactive mode:
 ```bash
 duckdb -dark-mode -no-stdin -c "SELECT count(*), categories.primary, count(*) FROM 'MC_monaco.places.parquet' GROUP BY ALL LIMIT 10;"
 ```
+
+> [!IMPORTANT]
+> Always use `-dark-mode -no-stdin` when invoking `duckdb` in CLI commands or test scripts to prevent terminal color detection timeouts (> 5s).
 
 ---
 
