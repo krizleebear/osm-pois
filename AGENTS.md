@@ -43,9 +43,9 @@ osm-pois/
 
 ---
 
-## 3. Critical Invariants & Rules
+## 3. Critical POI Schema & Conversion Invariants
 
-When modifying or generating code in this repository, you **MUST** follow these rules:
+When modifying or generating code in this repository, you **MUST** follow these domain-specific invariants:
 
 1. **Zero New Heavy Dependencies**:
    * Do not introduce JVM/Java, heavy Python runtimes, or unneeded container images.
@@ -67,17 +67,85 @@ When modifying or generating code in this repository, you **MUST** follow these 
      1. Ensure it is preserved by `osmium tags-filter` in `azure-pipelines.yml`.
      2. Extract it in `raw_features` and handle it in the category mapping logic in `scripts/export_pois.sql`.
    * Note: With `osmium export`, all OSM tags are preserved in the JSON `properties` object without requiring manual `config/osmconf.ini` schema adjustments.
-8. **Azure DevOps Boolean Parameters & Conditions**:
-   * Do not use template string expansion like `eq('${{ parameters.x }}', 'true')`. In Azure Pipelines, boolean parameters evaluate at template expansion time to C# capitalized strings (`'True'` / `'False'`), causing equality checks against lowercase `'true'` to fail silently.
-   * Always use canonical boolean expression syntax: `eq(parameters.x, true)`.
-9. **Atomic Commits & Mandatory Test Expansion**:
-   * **Mandatory Test Coverage**: Whenever adding a new feature, new category mapping, or fixing a bug, you **MUST** extend the test suite (e.g., add new test cases in `tests/test_unit.sql` or add validation assertions in `tests/test_conversion.sh`).
-   * **Immediate Atomic Commits**: As soon as a feature, fix, or logical task is completed and verified (`./tests/run_unit_tests.sh` and/or `./tests/test_conversion.sh` pass), immediately create a clean Git commit with a conventional commit message.
-   * **No Uncommitted Work Pile-up**: Never leave multiple unrelated features uncommitted in the working tree. Commit each topic separately once green.
 
 ---
 
-## 4. Verification & Testing
+## 4. Git Workflow & Pipeline Invariants
+
+To ensure consistent pipeline execution, reproducible releases, and clean Git workflows across the OSM compiler pipeline ecosystem, developers and AI agents must adhere to the following rules:
+
+1. **Explanation Preceding Git Actions Invariant (Explain First, Commit Second)**:
+   - The agent must always first present a clear, comprehensive explanation of the diagnosis, the rationale, and the exact changes in the visible response text before requesting permission or attempting to execute `git commit`, `git push`, or pipeline triggers. Never trigger permission prompts for Git actions without the user having seen the complete explanatory context first.
+2. **Atomic Commits & Mandatory Test Expansion**:
+   - **Mandatory Test Coverage**: Whenever adding a new feature, new category mapping, or fixing a bug, you **MUST** extend the test suite (e.g. add new test cases in `tests/test_unit.sql` or add validation assertions in `tests/test_conversion.sh`).
+   - **Immediate Atomic Commits**: As soon as a feature, fix, or logical task is completed and verified (`./tests/run_unit_tests.sh` and/or `./tests/test_conversion.sh` pass), immediately create a clean Git commit with a conventional commit message.
+   - **No Uncommitted Work Pile-up**: Never leave multiple unrelated features uncommitted in the working tree. Commit each topic separately once green.
+3. **Diff Verification against Remote**:
+   - Before committing or pushing, verify `git diff origin/main` to ensure no local test comments, temporary debug code, or scratch files are staged.
+4. **Conventional Commits**:
+   - Use conventional commit prefixes (`feat:`, `fix:`, `refactor:`, `test:`, `docs:`).
+5. **Language Preference Hierarchy for Scripts & Tools**:
+   - Select implementation languages based on the available lightweight execution environment following the strict priority hierarchy: **DuckDB SQL > Python 3 > Bash > others**.
+   - Zero JVM/Java dependencies is a non-negotiable project invariant. Do not introduce unapproved secondary languages outside this hierarchy.
+6. **Transparent Failure Policy (No Hiding Errors / No Silent Fallbacks)**:
+   - Pipeline scripts and processing stages must never mask missing input artifacts, swallow errors, or execute silent fallbacks to raw external URLs. If an expected upstream artifact or file is missing, the script must fail explicitly with a clear, diagnostic error message detailing the missing file, root cause, and remediation steps.
+7. **English Output Standard for CI/CD & Pipeline Logs**:
+   - All user-facing log outputs, diagnostic error messages, pipeline notices, and CLI reports must be written strictly in clear, professional English to maintain consistency across international developer environments and automated CI/CD runners.
+8. **Container Security & Dependency Invariance (No Root Elevation / No Dynamic Package Install)**:
+   - Pipeline steps and container configurations must strictly run unprivileged and must NEVER escalate to root permissions (`--user 0:0` or `sudo`) to bypass container limitations. All required execution binaries (e.g. Python 3, DuckDB, Osmium) must be pre-packaged directly in the container image, and pipeline steps must never perform dynamic runtime package installation (`apt-get install`).
+9. **Local Clean-Room Container Verification**:
+   - Before committing pipeline modifications or scripts, verify execution inside the local Docker container environment (`ghcr.io/krizleebear/osm2parquet:v1.0.9`) to prevent missing-dependency failures in CI runners.
+10. **Workspace Boundary Scoping**:
+    - Limit all grep and file searches strictly to active workspace directories without traversing parent directories.
+11. **Mandatory Pipeline YAML Syntax Pre-Verification**:
+    - Before committing modifications to pipeline definition files (`.yml`), validate full YAML structural parsing inside Docker or local Python (e.g. `python3 -c "import yaml; yaml.safe_load(open('azure-pipelines.yml'))"`). Commits with unverified YAML syntax are strictly prohibited.
+12. **Azure DevOps Job Container Entrypoint Safety**:
+    - Docker images intended for Azure DevOps job containers (`container: <image>`) must NOT define an exec-form `ENTRYPOINT` that exits on unknown arguments (such as `ENTRYPOINT ["/app/entrypoint.sh"]`), because Azure DevOps starts job containers with `sleep infinity`. Use `CMD ["/bin/bash"]` in the Dockerfile and invoke processing scripts explicitly in pipeline steps.
+13. **Docker Schema 2 Manifest Requirement for Container Registries**:
+    - Container images pushed to Docker Hub or `mirror.gcr.io` consumption must be built in Docker Schema 2 format (`application/vnd.docker.distribution.manifest.v2+json`) using standard `docker build` or `docker buildx build --provenance=false`. Modern OCI attestation/provenance blobs cause `unknown blob` 404 errors on `mirror.gcr.io`.
+14. **DuckDB Script Template Substitution Invariant**:
+    - DuckDB `COPY ... TO` statements require string literal paths. Do not attempt `getvariable()` inside `COPY TO`. Use `sed` token substitution (`__INPUT_JSONL__`, `__OUTPUT_PARQUET__`, `__COUNTRY_CODE__`, `__REPO_ROOT__`) on SQL templates before piping into `duckdb`.
+15. **Azure DevOps Boolean & Parameter Condition Syntax**:
+    - In Azure DevOps task/job `condition:` expressions, template parameters MUST be evaluated using canonical boolean syntax: `eq(parameters.x, true)`. Do not use template string expansion like `eq('${{ parameters.x }}', 'true')` because boolean parameters evaluate at template expansion time to C# capitalized strings (`'True'` / `'False'`), causing checks against lowercase `'true'` to fail silently.
+    - In Bash scripts, handle both `"false"` and `"False"` because template expansion converts boolean false to `"False"`.
+16. **Azure DevOps String Parameter Defaults (`latest` / `auto`)**:
+    - In Azure DevOps manual run dialogs, string parameters treat empty string values as invalid/required in the UI modal. String parameters (like `downloadBuildId`) must default to `'latest'` or `'auto'`, and conditions must support `'latest'`, `'auto'`, and custom build IDs.
+17. **Downstream Stage Dependency Safety (`condition: succeeded('<stage>')`)**:
+    - Downstream stages (such as release or aggregation) that depend on upstream parallel matrix jobs MUST use `condition: succeeded('<stage>')`. Using parameterless `succeeded()` causes the stage to be skipped if any upstream stage was skipped via conditional parameters. Never use `condition: always()` on final bundling/release stages, as upstream failure would trigger incomplete artifact archiving.
+18. **Container Registry Mirrors & Upstream Image Synchronization**:
+    - Preserve primary registry configurations (GHCR) and fallback mirrors (`mirror.gcr.io`) in pipeline definitions. Whenever the base container image (`osm2parquet`) is updated, downstream pipeline definitions (`azure-pipelines.yml`) must immediately reference the new tag.
+19. **Feature Branch Pipeline Testing**:
+    - Azure DevOps pipelines can be triggered directly from feature branches. For major pipeline refactorings or matrix tests, work and test on a dedicated feature branch first before merging to `main`.
+20. **Fast-Fail CI Preflight Invariant**:
+    - Never launch long-running or matrix-heavy pipeline stages without an initial fast (<30s) preflight check or stage. Validate pipeline YAML syntax and execute the fast unit test suite (`./tests/run_unit_tests.sh`) before heavy runner compute is consumed.
+21. **Guaranteed Artifact Existence Invariant**:
+    - Azure DevOps `PublishPipelineArtifact` tasks fail with runner warnings if the target file does not exist on disk. Export jobs and post-processing steps must ensure all declared artifact targets exist (touching empty fallback files if necessary) to keep build results 100% clean and green.
+22. **Non-Breaking Pipeline Quality Audits (`##vso[task.logissue type=warning]`)**:
+    - Post-processing data audits (such as category coverage checks, feature count assertions, or empty dataset checks) should emit native Azure DevOps warning annotations (`echo "##vso[task.logissue type=warning]..."`) and run with `continueOnError: true` unless hard-failing is strictly required. This highlights anomalies prominently in the Azure DevOps run summary without breaking long-running packaging pipelines.
+23. **Modular & Testable Validation Tooling**:
+    - Complex verification steps must never be written as long inline Bash loops inside pipeline YAML. Implement them as dedicated, standalone scripts (e.g. in `tests/` or `scripts/`) with accompanying test cases runnable in local Docker environments.
+24. **Long-Form CLI Parameters & Download Resilience Invariant**:
+    - Always use explicit, readable long-form parameters in pipeline scripts (e.g., `--continue-at -` instead of `-C -`).
+    - Large external file downloads (such as Geofabrik PBF extracts) must specify stall timeouts (`--speed-limit 10240 --speed-time 30`), resume capabilities (`--continue-at -`), and emit lightweight background progress heartbeats to prevent silent runner hangs.
+25. **1-Pass PBF Extraction & Zero-Disk Stream Performance Invariant**:
+    - Large raw PBF files must be scanned only ONCE. Avoid multiple redundant reading passes over multi-gigabyte PBF extracts. Use `osmium export` or `osmium tags-filter` streaming directly through named pipes (`mkfifo`) into DuckDB to eliminate intermediate disk I/O.
+26. **Osmium Export ID Configuration Invariant**:
+    - `osmium export` omits `@id` attributes by default unless `--config` or `-a type,id` is explicitly passed. All place export commands must pass `-a type,id` to preserve `osm_id`.
+27. **Stream File Format Conventions (`.geojsonseq` vs `.jsonl`) & Vectorized DuckDB Ingestion**:
+    - `*.geojsonseq`: Strictly adheres to RFC 8142 (GeoJSON Text Sequences) where each line is a full standard GeoJSON Feature object (`{"type": "Feature", "geometry": {...}, "properties": {...}}`). Designed for spatial streaming.
+    - `*.jsonl`: Formatted as newline-delimited flattened tabular records. Designed as high-throughput, columnar-ready ETL streams for direct vectorized ingestion via DuckDB `read_json()`. Tabular JSONL streams must retain `.jsonl` and never be misnamed `.geojsonseq` as they lack GeoJSON Feature wrappers.
+28. **Multi-Extract Feature Deduplication Invariant**:
+    - When consolidating multiple regional extracts into a single per-country GeoParquet file (e.g. Spain + Canary Islands), DuckDB consolidation queries must deduplicate shared features using `ROW_NUMBER() OVER (PARTITION BY id ORDER BY ...)` or deterministic precedence.
+29. **GitHub Release 2 GiB Asset Size Limit & GeoParquet Partitioning**:
+    - GitHub Releases enforce a strict hard limit of 2 GiB (2,147,483,648 bytes) per uploaded asset. Regional GeoParquet files must stay safely under 2.0 GiB (partitioning large countries if necessary).
+30. **Evidence-Based Issue Analysis & Remote Diagnostics (DuckDB + httpfs / S3)**:
+    - Never assume an issue is fixed or make claims based solely on commit history, code reviews, or theoretical assumptions. Always gather concrete empirical evidence by directly querying live release artifacts or test outputs.
+    - Use DuckDB with `httpfs` to query remote GitHub Release assets or S3 buckets directly (`duckdb -c "INSTALL httpfs; LOAD httpfs; SELECT ... FROM 'https://...'"`).
+    - When reporting or investigating anomalies across upstream/downstream boundaries, provide reproducible SQL queries against the exact release dataset to eliminate ambiguity and immediately isolate root causes.
+
+---
+
+## 5. Verification & Testing
 
 ### Running Unit Tests & Taxonomy Linter (<100ms)
 
@@ -139,7 +207,7 @@ GROUP BY ALL;
 
 ---
 
-## 5. Typical Tasks for Agents
+## 6. Typical Tasks for Agents
 
 * **Extending POI Mapping Rules**: Add new tag combinations to `mappings/overture_to_osm_categories.csv` and ensure matching categories exist in `mappings/overture_categories.csv`.
 * **Exposing New OSM Attributes**: If a new tag is needed for categorization or metadata (e.g. `cuisine`, `operator`, `brand`), add it to both `[points]` and `[multipolygons]` in `config/osmconf.ini` AND include it in the `osmium tags-filter` step in `azure-pipelines.yml`.
