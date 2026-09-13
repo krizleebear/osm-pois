@@ -48,3 +48,21 @@ Hyperlinks to `https://www.openstreetmap.org/copyright` and `https://opendatacom
 ## Category Mapping Tables License (MIT)
 
 The mapping tables in `mappings/` are derived from the [Cadence Maps](https://gitlab.com/geometalab/bafs25-cadencemaps) project (OST / Eastern Switzerland University of Applied Sciences, by Fadil Smajilbasic, Matthias Hersche, and Nils Robin-Grob) and are licensed under the [MIT License](mappings/README.md).
+
+---
+
+## Schema Specification License: Overture Maps Foundation (CC-BY-4.0)
+
+The target schema structure (`theme=places / type=place`) and category taxonomy concepts follow the open specifications of the [Overture Maps Foundation](https://overturemaps.org/):
+
+- **Schema Specification**: [Overture Maps Schema](https://github.com/OvertureMaps/schema) ([docs.overturemaps.org/schema](https://docs.overturemaps.org/schema/))
+- **Schema License**: [Creative Commons Attribution 4.0 International (CC-BY-4.0)](https://creativecommons.org/licenses/by/4.0/)
+- **Attribution**: Schema specification © [Overture Maps Foundation](https://overturemaps.org/), licensed under [CC-BY-4.0](https://creativecommons.org/licenses/by/4.0/).
+
+---
+
+## Trademark & Non-Affiliation Disclaimer
+
+"OpenStreetMap" is a registered trademark of the OpenStreetMap Foundation. "Overture Maps" is a trademark of the Joint Development Foundation.
+
+This project is an independent open-source tool and is **not** affiliated with, endorsed by, or sponsored by either the OpenStreetMap Foundation or the Overture Maps Foundation.

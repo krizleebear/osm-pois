@@ -132,3 +132,8 @@ The target schema (`theme=places / type=place`) and category taxonomy concepts f
 > [!NOTE]
 > This pipeline compiles OpenStreetMap data into the Overture schema as a compatible drop-in target format. The underlying data remains OpenStreetMap (ODbL 1.0), while the schema specification itself is governed by CC-BY-4.0.
 
+### Trademark & Non-Affiliation Disclaimer
+"OpenStreetMap" is a registered trademark of the OpenStreetMap Foundation. "Overture Maps" is a trademark of the Joint Development Foundation.
+
+This project is an independent open-source tool and is **not** affiliated with, endorsed by, or sponsored by either the OpenStreetMap Foundation or the Overture Maps Foundation.
+
