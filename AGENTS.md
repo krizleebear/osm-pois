@@ -57,8 +57,10 @@ When modifying or generating code in this repository, you **MUST** follow these 
    * When resolving categories in SQL, maintain the single-rule deduplication pattern (`ORDER BY has_subtag ASC, overture_cat ASC`) to ensure deterministic results.
 4. **Category Hierarchy Integrity**:
    * `mappings/overture_categories.csv` uses semicolons as column separators (`category;[hierarchy]`). DuckDB's `read_csv` parses this automatically into `column0` and `column1`. Do not use manual string slicing unless necessary.
-5. **ODbL License Preservation**:
-   * In the `sources` array of the generated GeoParquet, `dataset: 'OpenStreetMap'` and `license: 'ODbL-1.0'` must always be preserved.
+5. **Multi-Level ODbL License & Provenance Preservation**:
+   * **Feature-Level Sources**: In the `sources` array of every generated GeoParquet record, `dataset: 'OpenStreetMap'` and `license: 'ODbL-1.0'` must always be preserved, along with `record_id` (e.g. `osm:node/12345`) and `update_time` (ISO 8601 timestamp).
+   * **Feature-Level Versioning**: The top-level `version` column must accurately reflect the OSM feature `@version`.
+   * **Parquet File-Level KV_METADATA**: The `COPY ... TO ... (KV_METADATA { ... })` block in `scripts/export_pois.sql` must preserve all machine-readable provenance fields (`source`, `origin`, `dataset`, `attribution`, `attribution_url`, `license`, `license_url`, `copyright`, `schema`, `schema_url`, `compiler`, `compiler_version`, `country_code`, `exported_at`). Never strip or remove this metadata during refactoring.
 6. **Preserve Granularity (No Lossy Over-Generalization)**:
    * Do not map distinct, specialized OSM concepts to broad, inaccurate parent buckets (e.g. `amenity=public_bookcase` MUST NOT be mapped to `library`, `waste_basket` or `bench` must not be force-mapped to unrelated commercial places).
    * It is strictly preferable to preserve the original OSM tag name (e.g. `categories.primary = 'public_bookcase'`) rather than artificially forcing it into an ill-fitting Overture bucket. Downstream systems cannot undo lossy generalizations.
@@ -143,6 +145,12 @@ To ensure consistent pipeline execution, reproducible releases, and clean Git wo
     - Never assume an issue is fixed or make claims based solely on commit history, code reviews, or theoretical assumptions. Always gather concrete empirical evidence by directly querying live release artifacts or test outputs.
     - Use DuckDB with `httpfs` to query remote GitHub Release assets or S3 buckets directly (`duckdb -c "INSTALL httpfs; LOAD httpfs; SELECT ... FROM 'https://...'"`).
     - When reporting or investigating anomalies across upstream/downstream boundaries, provide reproducible SQL queries against the exact release dataset to eliminate ambiguity and immediately isolate root causes.
+31. **Machine-Readable Parquet Metadata & Multi-Tier Attribution Invariant**:
+    - Every exported GeoParquet asset must embed full provenance and legal attribution directly into its file footer via DuckDB `KV_METADATA` (`source`, `origin`, `dataset`, `attribution`, `attribution_url`, `license`, `license_url`, `copyright`, `schema`, `schema_url`, `compiler`, `compiler_version`, `country_code`, `exported_at`).
+    - Automated integration tests (`tests/test_conversion.sh`) assert the non-empty presence of `attribution`, `license`, `source`, `compiler`, and `country_code`.
+    - Downstream tools, UI viewers (e.g. `viewer/index.html`), release notes, and documentation must display clear OpenStreetMap attribution conforming to ODbL 1.0 Section 4.3:
+      > **"Data © OpenStreetMap contributors, available under the Open Database License (ODbL)."**
+      with hyperlinked text directly pointing to [https://www.openstreetmap.org/copyright](https://www.openstreetmap.org/copyright) and [https://opendatacommons.org/licenses/odbl/](https://opendatacommons.org/licenses/odbl/).
 
 ---
 
