@@ -31,3 +31,58 @@ SELECT DISTINCT ON (primary_key, primary_val)
 FROM category_rules
 WHERE NOT (primary_key = 'tourism' AND primary_val = 'information')
 ORDER BY primary_key, primary_val, has_subtag ASC, overture_cat ASC;
+
+-- Fast in-memory dictionary lookups for category resolution (O(1) map access, zero nested hash joins)
+CREATE TEMP TABLE IF NOT EXISTS taxonomy_lookup AS
+SELECT {
+    'primary_map': (
+        SELECT MAP(list(k), list(v)) FROM (
+            SELECT primary_key || '=' || primary_val AS k, overture_cat AS v FROM primary_rules
+        )
+    ),
+    'cuisine_map': (
+        SELECT MAP(list(sub_val), list(overture_cat)) FROM (
+            SELECT DISTINCT ON (sub_val) sub_val, overture_cat
+            FROM category_rules
+            WHERE primary_key = 'amenity' AND primary_val = 'restaurant' AND sub_key = 'cuisine'
+            ORDER BY sub_val, overture_cat ASC
+        )
+    ),
+    'station_map': (
+        SELECT MAP(list(sub_val), list(overture_cat)) FROM (
+            SELECT DISTINCT ON (sub_val) sub_val, overture_cat
+            FROM category_rules
+            WHERE primary_key = 'railway' AND primary_val = 'station' AND sub_key = 'station'
+            ORDER BY sub_val, overture_cat ASC
+        )
+    ),
+    'worship_rel_denom_map': (
+        SELECT MAP(list(rel_denom), list(overture_cat)) FROM (
+            SELECT DISTINCT ON (sub_val, sub3_val) sub_val || '=' || sub3_val AS rel_denom, overture_cat
+            FROM category_rules
+            WHERE primary_key = 'amenity' AND primary_val = 'place_of_worship' AND sub_key = 'religion' AND sub3_key = 'denomination'
+            ORDER BY sub_val, sub3_val, overture_cat ASC
+        )
+    ),
+    'worship_denom_map': (
+        SELECT MAP(list(denom), list(overture_cat)) FROM (
+            SELECT DISTINCT ON (denom) denom, overture_cat FROM (
+                SELECT sub_val AS denom, overture_cat FROM category_rules WHERE primary_key = 'amenity' AND primary_val = 'place_of_worship' AND sub_key = 'denomination'
+                UNION ALL
+                SELECT sub3_val AS denom, overture_cat FROM category_rules WHERE primary_key = 'amenity' AND primary_val = 'place_of_worship' AND sub3_key = 'denomination'
+            ) ORDER BY denom, overture_cat ASC
+        )
+    ),
+    'worship_religion_map': (
+        SELECT MAP(list(sub_val), list(overture_cat)) FROM (
+            SELECT DISTINCT ON (sub_val) sub_val, overture_cat
+            FROM category_rules
+            WHERE primary_key = 'amenity' AND primary_val = 'place_of_worship' AND sub_key = 'religion' AND (sub3_key IS NULL OR sub3_key = '')
+            ORDER BY sub_val, overture_cat ASC
+        )
+    ),
+    'hierarchy_map': (
+        SELECT MAP(list(overture_cat), list(hierarchy)) FROM overture_taxonomy
+    )
+} AS lookup;
+

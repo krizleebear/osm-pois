@@ -43,19 +43,19 @@ CAST(
 
 -- Identify micro-infrastructure tags (street furniture) that should not be extracted as standalone POIs
 CREATE OR REPLACE MACRO is_micro_infrastructure(amenity) AS
-amenity IN ('bench', 'waste_basket', 'shelter', 'grit_bin', 'hunting_stand', 'feeding_place', 'waste_disposal', 'ticket_validator');
+list_contains(['bench', 'waste_basket', 'shelter', 'grit_bin', 'hunting_stand', 'feeding_place', 'waste_disposal', 'ticket_validator'], amenity);
 
 -- Identify outdoor information micro-infrastructure tags (boards, signposts, maps) that should not be standalone POIs
 CREATE OR REPLACE MACRO is_info_micro_infrastructure(tourism, info) AS
-tourism = 'information' AND COALESCE(info IN ('board', 'guidepost', 'map', 'terminal', 'audioguide', 'tactile_map', 'tactile_model', 'route_marker', 'signpost'), FALSE);
+tourism = 'information' AND COALESCE(list_contains(['board', 'guidepost', 'map', 'terminal', 'audioguide', 'tactile_map', 'tactile_model', 'route_marker', 'signpost'], info), FALSE);
 
 -- Identify micro-technical man_made tags (cameras, manholes, survey markers, flagpoles, etc.) that should not be standalone POIs
 CREATE OR REPLACE MACRO is_micro_man_made(man_made) AS
-man_made IN ('surveillance', 'survey_point', 'manhole', 'pipeline', 'pumping_station', 'cutline', 'dyke', 'embankment', 'clearcut', 'flagpole', 'planter', 'street_cabinet', 'water_tap', 'insect_hotel', 'telephone_box');
+list_contains(['surveillance', 'survey_point', 'manhole', 'pipeline', 'pumping_station', 'cutline', 'dyke', 'embankment', 'clearcut', 'flagpole', 'planter', 'street_cabinet', 'water_tap', 'insect_hotel', 'telephone_box'], man_made);
 
 -- Identify physical & utility infrastructure POIs that qualify even when unnamed/unbranded (geocoder & public service targets)
 CREATE OR REPLACE MACRO is_utility_infrastructure(amenity, leisure, emergency) AS
-amenity IN ('post_box', 'toilets', 'charging_station', 'parking', 'parking_entrance', 'parcel_locker', 'atm', 'drinking_water', 'recycling', 'taxi')
+list_contains(['post_box', 'toilets', 'charging_station', 'parking', 'parking_entrance', 'parcel_locker', 'atm', 'drinking_water', 'recycling', 'taxi'], amenity)
 OR leisure = 'playground'
 OR emergency = 'defibrillator';
 

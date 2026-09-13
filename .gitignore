@@ -13,3 +13,4 @@ test_places.parquet
 .DS_Store
 .vscode/
 .idea/
+.tmp/duckdb_temp_storage*

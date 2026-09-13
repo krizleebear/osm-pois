@@ -1,6 +1,13 @@
 -- DuckDB SQL: OSM PBF -> Overture Places-compatible GeoParquet
 LOAD spatial;
 
+-- Memory and thread bounds for CI/CD runner environments (Azure DevOps 7GB limit)
+SET max_memory = '4500MB';
+SET temp_directory = '__TEMP_DIR__';
+SET preserve_insertion_order = false;
+SET threads = 2;
+SET write_buffer_row_group_count = 1;
+
 -- Configure repository root for loading external mappings
 SET VARIABLE repo_root = '__REPO_ROOT__';
 
@@ -10,89 +17,94 @@ SET VARIABLE repo_root = '__REPO_ROOT__';
 .read __REPO_ROOT__/scripts/sql/03_categorization.sql
 .read __REPO_ROOT__/scripts/sql/04_confidence.sql
 
--- Extract Raw Features from Osmium GeoJSON stream (reconstructs 100% of points, ways, and polygons)
-CREATE TEMP TABLE raw_features AS
-WITH base_json AS (
-    SELECT 
-        geometry,
-        properties
-    FROM read_json('__INPUT_JSONL__', 
-                   format='newline_delimited', 
-                   columns={'geometry': 'JSON', 'properties': 'JSON'})
-    WHERE is_poi_candidate(properties)
-      AND geometry IS NOT NULL
-      AND ST_IsValid(ST_GeomFromGeoJSON(geometry))
-)
-SELECT 
-    'osm:' || json_extract_string(properties, '$.@type') || '/' || json_extract_string(properties, '$.@id') AS id,
-    TRY_CAST(json_extract_string(properties, '$.@version') AS INTEGER) AS osm_version,
-    CASE 
-        WHEN json_extract_string(properties, '$.@timestamp') IS NOT NULL 
-        THEN strftime(to_timestamp(TRY_CAST(json_extract_string(properties, '$.@timestamp') AS BIGINT)), '%Y-%m-%dT%H:%M:%SZ') 
-        ELSE NULL 
-    END AS osm_timestamp,
-    resolve_poi_name(properties) AS name,
-    osm_names_common(properties) AS names_common,
-    osm_brand_common(properties) AS brand_common,
-    json_extract_string(properties, '$.amenity') AS amenity,
-    json_extract_string(properties, '$.religion') AS religion,
-    json_extract_string(properties, '$.denomination') AS denomination,
-    json_extract_string(properties, '$.cuisine') AS cuisine,
-    json_extract_string(properties, '$.shop') AS shop,
-    json_extract_string(properties, '$.tourism') AS tourism,
-    json_extract_string(properties, '$.information') AS information,
-    json_extract_string(properties, '$.leisure') AS leisure,
-    json_extract_string(properties, '$.office') AS office,
-    json_extract_string(properties, '$.craft') AS craft,
-    json_extract_string(properties, '$.healthcare') AS healthcare,
-    json_extract_string(properties, '$.historic') AS historic,
-    json_extract_string(properties, '$.sport') AS sport,
-    json_extract_string(properties, '$.aeroway') AS aeroway,
-    json_extract_string(properties, '$.railway') AS railway,
-    json_extract_string(properties, '$.station') AS station,
-    json_extract_string(properties, '$.man_made') AS man_made,
-    json_extract_string(properties, '$.emergency') AS emergency,
-    json_extract_string(properties, '$.operator') AS operator,
-    json_extract_string(properties, '$.ref') AS ref,
-    json_extract_string(properties, '$.brand') AS brand,
-    json_extract_string(properties, '$.brand:wikidata') AS brand_wikidata,
-    json_extract_string(properties, '$.addr:street') AS addr_street,
-    json_extract_string(properties, '$.addr:housenumber') AS addr_housenumber,
-    json_extract_string(properties, '$.addr:postcode') AS addr_postcode,
-    json_extract_string(properties, '$.addr:city') AS addr_city,
-    COALESCE(json_extract_string(properties, '$.website'), json_extract_string(properties, '$.contact:website')) AS website,
-    COALESCE(json_extract_string(properties, '$.phone'), json_extract_string(properties, '$.contact:phone')) AS phone,
-    COALESCE(json_extract_string(properties, '$.email'), json_extract_string(properties, '$.contact:email')) AS email,
-    -- Extended operational attributes (Superset extension)
-    json_extract_string(properties, '$.opening_hours') AS opening_hours,
-    json_extract_string(properties, '$.wheelchair') AS wheelchair,
-    extract_payment_methods(properties) AS payment_methods,
-    extract_poi_level(properties) AS level,
-    json_extract_string(properties, '$.delivery') AS delivery,
-    json_extract_string(properties, '$.takeaway') AS takeaway,
-    -- Upstream POI confidence scoring
-    calculate_poi_confidence(
-        properties,
-        ST_GeometryType(ST_GeomFromGeoJSON(geometry)) IN ('POLYGON', 'MULTIPOLYGON'),
-        TRY_CAST(json_extract_string(properties, '$.@version') AS INTEGER),
-        CASE 
-            WHEN json_extract_string(properties, '$.@timestamp') IS NOT NULL 
-            THEN strftime(to_timestamp(TRY_CAST(json_extract_string(properties, '$.@timestamp') AS BIGINT)), '%Y-%m-%dT%H:%M:%SZ') 
-            ELSE NULL 
-        END,
-        COALESCE(json_extract_string(properties, '$.website'), json_extract_string(properties, '$.contact:website')) IS NOT NULL,
-        COALESCE(json_extract_string(properties, '$.phone'), json_extract_string(properties, '$.contact:phone')) IS NOT NULL
-    ) AS confidence,
-    CASE 
-        WHEN ST_GeometryType(ST_GeomFromGeoJSON(geometry)) IN ('POLYGON', 'MULTIPOLYGON') 
-        THEN ST_PointOnSurface(ST_GeomFromGeoJSON(geometry)) 
-        ELSE ST_GeomFromGeoJSON(geometry) 
-    END AS geometry
-FROM base_json;
-
--- Map Categories and Format into Overture Places GeoParquet
+-- Stream Osmium GeoJSON directly into Overture Places GeoParquet (Zero Intermediate Materialization)
 COPY (
-    WITH categorized AS (
+    WITH base_json AS (
+        SELECT 
+            ST_GeomFromGeoJSON(geometry) AS geom,
+            properties
+        FROM read_json('__INPUT_JSONL__', 
+                       format='newline_delimited', 
+                       columns={'geometry': 'JSON', 'properties': 'JSON'})
+        WHERE is_poi_candidate(properties)
+          AND geometry IS NOT NULL
+    ),
+    valid_geoms AS (
+        SELECT 
+            geom,
+            properties
+        FROM base_json
+        WHERE geom IS NOT NULL AND ST_IsValid(geom)
+    ),
+    raw_features AS (
+        SELECT 
+            'osm:' || json_extract_string(properties, '$.@type') || '/' || json_extract_string(properties, '$.@id') AS id,
+            TRY_CAST(json_extract_string(properties, '$.@version') AS INTEGER) AS osm_version,
+            CASE 
+                WHEN json_extract_string(properties, '$.@timestamp') IS NOT NULL 
+                THEN strftime(to_timestamp(TRY_CAST(json_extract_string(properties, '$.@timestamp') AS BIGINT)), '%Y-%m-%dT%H:%M:%SZ') 
+                ELSE NULL 
+            END AS osm_timestamp,
+            resolve_poi_name(properties) AS name,
+            osm_names_common(properties) AS names_common,
+            osm_brand_common(properties) AS brand_common,
+            json_extract_string(properties, '$.amenity') AS amenity,
+            json_extract_string(properties, '$.religion') AS religion,
+            json_extract_string(properties, '$.denomination') AS denomination,
+            json_extract_string(properties, '$.cuisine') AS cuisine,
+            json_extract_string(properties, '$.shop') AS shop,
+            json_extract_string(properties, '$.tourism') AS tourism,
+            json_extract_string(properties, '$.information') AS information,
+            json_extract_string(properties, '$.leisure') AS leisure,
+            json_extract_string(properties, '$.office') AS office,
+            json_extract_string(properties, '$.craft') AS craft,
+            json_extract_string(properties, '$.healthcare') AS healthcare,
+            json_extract_string(properties, '$.historic') AS historic,
+            json_extract_string(properties, '$.sport') AS sport,
+            json_extract_string(properties, '$.aeroway') AS aeroway,
+            json_extract_string(properties, '$.railway') AS railway,
+            json_extract_string(properties, '$.station') AS station,
+            json_extract_string(properties, '$.man_made') AS man_made,
+            json_extract_string(properties, '$.emergency') AS emergency,
+            json_extract_string(properties, '$.operator') AS operator,
+            json_extract_string(properties, '$.ref') AS ref,
+            json_extract_string(properties, '$.brand') AS brand,
+            json_extract_string(properties, '$.brand:wikidata') AS brand_wikidata,
+            json_extract_string(properties, '$.addr:street') AS addr_street,
+            json_extract_string(properties, '$.addr:housenumber') AS addr_housenumber,
+            json_extract_string(properties, '$.addr:postcode') AS addr_postcode,
+            json_extract_string(properties, '$.addr:city') AS addr_city,
+            COALESCE(json_extract_string(properties, '$.website'), json_extract_string(properties, '$.contact:website')) AS website,
+            COALESCE(json_extract_string(properties, '$.phone'), json_extract_string(properties, '$.contact:phone')) AS phone,
+            COALESCE(json_extract_string(properties, '$.email'), json_extract_string(properties, '$.contact:email')) AS email,
+            -- Extended operational attributes (Superset extension)
+            json_extract_string(properties, '$.opening_hours') AS opening_hours,
+            json_extract_string(properties, '$.wheelchair') AS wheelchair,
+            extract_payment_methods(properties) AS payment_methods,
+            extract_poi_level(properties) AS level,
+            json_extract_string(properties, '$.delivery') AS delivery,
+            json_extract_string(properties, '$.takeaway') AS takeaway,
+            -- Upstream POI confidence scoring
+            calculate_poi_confidence(
+                properties,
+                ST_GeometryType(geom) IN ('POLYGON', 'MULTIPOLYGON'),
+                TRY_CAST(json_extract_string(properties, '$.@version') AS INTEGER),
+                CASE 
+                    WHEN json_extract_string(properties, '$.@timestamp') IS NOT NULL 
+                    THEN strftime(to_timestamp(TRY_CAST(json_extract_string(properties, '$.@timestamp') AS BIGINT)), '%Y-%m-%dT%H:%M:%SZ') 
+                    ELSE NULL 
+                END,
+                COALESCE(json_extract_string(properties, '$.website'), json_extract_string(properties, '$.contact:website')) IS NOT NULL,
+                COALESCE(json_extract_string(properties, '$.phone'), json_extract_string(properties, '$.contact:phone')) IS NOT NULL
+            ) AS confidence,
+            CASE 
+                WHEN ST_GeometryType(geom) IN ('POLYGON', 'MULTIPOLYGON') 
+                THEN ST_PointOnSurface(geom) 
+                ELSE geom 
+            END AS geometry
+        FROM valid_geoms
+    ),
+    categorized AS (
         SELECT 
             f.*,
             resolve_poi_category(
@@ -143,7 +155,7 @@ COPY (
         }] AS sources,
         'active' AS operating_status,
         main_category AS basic_category,
-        {'primary': main_category, 'hierarchy': COALESCE(t.hierarchy, [main_category]), 'alternates': CAST([] AS VARCHAR[])} AS taxonomy,
+        {'primary': main_category, 'hierarchy': COALESCE((SELECT lookup FROM taxonomy_lookup).hierarchy_map[main_category], [main_category]), 'alternates': CAST([] AS VARCHAR[])} AS taxonomy,
         COALESCE(osm_version, 1) AS version,
         {
             'xmin': ST_X(geometry),
@@ -165,7 +177,6 @@ COPY (
         delivery,
         takeaway
     FROM categorized c
-    LEFT JOIN overture_taxonomy t ON c.main_category = t.overture_cat
 ) TO '__OUTPUT_PARQUET__' (
     FORMAT PARQUET, 
     COMPRESSION 'ZSTD',
