@@ -24,7 +24,11 @@ osm-pois/
 │   └── overture_to_osm_categories.csv  # 2,100+ OSM tag to Overture category rules
 ├── scripts/
 │   ├── entrypoint.sh            # Runner script for DuckDB conversion
-│   └── export_pois.sql          # DuckDB SQL mapping into Overture Places GeoParquet
+│   ├── export_pois.sql          # Orchestrator for DuckDB conversion & Parquet export
+│   └── sql/                     # Modular DuckDB SQL components
+│       ├── 01_taxonomy.sql      # Taxonomy & category mapping rules loader
+│       ├── 02_macros.sql        # Reusable macros (names, brand, addresses, filters)
+│       └── 03_categorization.sql# POI category resolution (Single Source of Truth)
 └── README.md
 ```
 

@@ -2,34 +2,20 @@
 -- OSM-POIS DuckDB Unit Tests & Linter
 -- Verifies:
 --   1. Taxonomy integrity (no orphaned categories, valid hierarchies)
---   2. Category resolution logic against mock test cases
+--   2. Category resolution logic against mock test cases (Single Source of Truth)
+--   3. Reusable DuckDB macros (Multilingual names, Micro-infrastructure, Schema)
 -- ============================================================================
+
+-- Load modular SQL components (Single Source of Truth)
+.read scripts/sql/01_taxonomy.sql
+.read scripts/sql/02_macros.sql
+.read scripts/sql/03_categorization.sql
 
 -- ----------------------------------------------------------------------------
 -- Part 1: Taxonomy & Mapping Integrity Checks
 -- ----------------------------------------------------------------------------
 
--- Check 1.1: Load taxonomy and mapping rules
-CREATE TEMP TABLE overture_taxonomy AS
-SELECT 
-    trim(column0) AS overture_cat,
-    str_split(replace(replace(trim(column1), '[', ''), ']', ''), ',') AS hierarchy
-FROM read_csv('mappings/overture_categories.csv', header=False);
-
-CREATE TEMP TABLE category_rules AS
-SELECT 
-    trim(column0) AS overture_cat,
-    trim(column1) AS tag_expr,
-    split_part(split_part(trim(column1), ',', 1), '=', 1) AS primary_key,
-    split_part(split_part(trim(column1), ',', 1), '=', 2) AS primary_val,
-    split_part(split_part(trim(column1), ',', 2), '=', 1) AS sub_key,
-    split_part(split_part(trim(column1), ',', 2), '=', 2) AS sub_val,
-    split_part(split_part(trim(column1), ',', 3), '=', 1) AS sub3_key,
-    split_part(split_part(trim(column1), ',', 3), '=', 2) AS sub3_val,
-    length(split_part(trim(column1), ',', 2)) AS has_subtag
-FROM read_csv('mappings/overture_to_osm_categories.csv', header=False);
-
--- Check 1.2: Assert no orphaned target categories
+-- Check 1.1: Assert no orphaned target categories
 CREATE TEMP TABLE orphaned_categories AS
 SELECT DISTINCT r.overture_cat
 FROM category_rules r
@@ -45,10 +31,10 @@ SELECT
     END AS taxonomy_check
 FROM orphaned_categories;
 
--- Check 1.3: Assert no empty taxonomy entries
+-- Check 1.2: Assert no empty taxonomy entries
 CREATE TEMP TABLE empty_taxonomy_entries AS
 SELECT column0, column1
-FROM read_csv('mappings/overture_categories.csv', header=False)
+FROM read_csv(COALESCE(getvariable('repo_root'), '.') || '/mappings/overture_categories.csv', header=False)
 WHERE column0 IS NULL OR trim(column0) = '' OR column1 IS NULL OR trim(column1) = '';
 
 SELECT 
@@ -59,16 +45,8 @@ SELECT
 FROM empty_taxonomy_entries;
 
 -- ----------------------------------------------------------------------------
--- Part 2: Mock Category Resolution Unit Tests
+-- Part 2: Mock Category Resolution Unit Tests (via resolve_poi_category macro)
 -- ----------------------------------------------------------------------------
-
-CREATE TEMP TABLE primary_rules AS
-SELECT DISTINCT ON (primary_key, primary_val)
-    overture_cat,
-    primary_key,
-    primary_val
-FROM category_rules
-ORDER BY primary_key, primary_val, has_subtag ASC, overture_cat ASC;
 
 CREATE TEMP TABLE test_cases (
     test_id VARCHAR,
@@ -145,74 +123,15 @@ INSERT INTO test_cases (test_id, expected_category, historic) VALUES
 INSERT INTO test_cases (test_id, expected_category) VALUES
     ('TC33-Fallback-POI', 'point_of_interest');
 
+-- Evaluate categories using the production resolve_poi_category macro
 CREATE TEMP TABLE evaluated AS
 SELECT 
     t.test_id,
     t.expected_category,
-    COALESCE(
-        -- 1. Cuisine-specific restaurant match
-        CASE WHEN t.amenity = 'restaurant' AND t.cuisine IS NOT NULL THEN
-            (SELECT r.overture_cat FROM category_rules r 
-             WHERE r.primary_key = 'amenity' AND r.primary_val = 'restaurant' 
-               AND r.sub_key = 'cuisine' AND r.sub_val = split_part(t.cuisine, ';', 1) 
-             ORDER BY r.overture_cat ASC
-             LIMIT 1)
-        END,
-        -- 2. Transit station subtag match
-        CASE WHEN t.railway = 'station' AND t.station IS NOT NULL THEN
-            (SELECT r.overture_cat FROM category_rules r 
-             WHERE r.primary_key = 'railway' AND r.primary_val = 'station' 
-               AND r.sub_key = 'station' AND r.sub_val = t.station 
-             ORDER BY r.overture_cat ASC
-             LIMIT 1)
-        END,
-        -- 3. Place of worship denomination & religion subtag match
-        CASE WHEN t.amenity = 'place_of_worship' THEN
-            COALESCE(
-                CASE WHEN t.religion IS NOT NULL AND t.denomination IS NOT NULL THEN
-                    (SELECT r.overture_cat FROM category_rules r 
-                     WHERE r.primary_key = 'amenity' AND r.primary_val = 'place_of_worship' 
-                       AND r.sub_key = 'religion' AND r.sub_val = split_part(t.religion, ';', 1)
-                       AND r.sub3_key = 'denomination' AND r.sub3_val = split_part(t.denomination, ';', 1)
-                     ORDER BY r.overture_cat ASC
-                     LIMIT 1)
-                END,
-                CASE WHEN t.denomination IS NOT NULL THEN
-                    (SELECT r.overture_cat FROM category_rules r 
-                     WHERE r.primary_key = 'amenity' AND r.primary_val = 'place_of_worship' 
-                       AND (
-                           (r.sub_key = 'denomination' AND r.sub_val = split_part(t.denomination, ';', 1)) OR
-                           (r.sub3_key = 'denomination' AND r.sub3_val = split_part(t.denomination, ';', 1))
-                       )
-                     ORDER BY r.overture_cat ASC
-                     LIMIT 1)
-                END,
-                CASE WHEN t.religion IS NOT NULL THEN
-                    (SELECT r.overture_cat FROM category_rules r 
-                     WHERE r.primary_key = 'amenity' AND r.primary_val = 'place_of_worship' 
-                       AND r.sub_key = 'religion' AND r.sub_val = split_part(t.religion, ';', 1)
-                       AND (r.sub3_key IS NULL OR r.sub3_key = '')
-                     ORDER BY r.overture_cat ASC
-                     LIMIT 1)
-                END
-            )
-        END,
-        -- 4. Primary tag matches from deterministic rule table
-        (SELECT r.overture_cat FROM primary_rules r WHERE r.primary_key = 'amenity' AND r.primary_val = t.amenity),
-        (SELECT r.overture_cat FROM primary_rules r WHERE r.primary_key = 'shop' AND r.primary_val = t.shop),
-        (SELECT r.overture_cat FROM primary_rules r WHERE r.primary_key = 'tourism' AND r.primary_val = t.tourism),
-        (SELECT r.overture_cat FROM primary_rules r WHERE r.primary_key = 'leisure' AND r.primary_val = t.leisure),
-        (SELECT r.overture_cat FROM primary_rules r WHERE r.primary_key = 'office' AND r.primary_val = t.office),
-        (SELECT r.overture_cat FROM primary_rules r WHERE r.primary_key = 'craft' AND r.primary_val = t.craft),
-        (SELECT r.overture_cat FROM primary_rules r WHERE r.primary_key = 'healthcare' AND r.primary_val = t.healthcare),
-        (SELECT r.overture_cat FROM primary_rules r WHERE r.primary_key = 'historic' AND r.primary_val = t.historic),
-        (SELECT r.overture_cat FROM primary_rules r WHERE r.primary_key = 'railway' AND r.primary_val = t.railway),
-        (SELECT r.overture_cat FROM primary_rules r WHERE r.primary_key = 'aeroway' AND r.primary_val = t.aeroway),
-        t.amenity,
-        t.shop,
-        t.tourism,
-        t.leisure,
-        'point_of_interest'
+    resolve_poi_category(
+        t.amenity, t.shop, t.tourism, t.leisure, t.office,
+        t.craft, t.healthcare, t.historic, t.railway, t.aeroway,
+        t.cuisine, t.station, t.religion, t.denomination
     ) AS actual_category
 FROM test_cases t;
 
@@ -238,37 +157,14 @@ WHERE expected_category != actual_category;
 -- Part 3: Schema Types, Multilingual Extraction & Micro-Infrastructure Tests
 -- ----------------------------------------------------------------------------
 
--- Check 3.1: Multilingual extraction & namespace filtering logic
+-- Check 3.1: Multilingual extraction & namespace filtering logic via osm_names_common macro
 CREATE TEMP TABLE mock_names_input AS
 SELECT 
     '{"@type":"node","@id":123,"name":"Hauptbahnhof","name:en":"Main Station","name:de":"Hauptbahnhof","name:fr":"Gare Centrale","alt_name":"Hbf","int_name":"Central Station","name:etymology:wikidata":"Q123","name:signed":"no","name:empty":""}'::JSON AS properties;
 
 CREATE TEMP TABLE mock_names_result AS
-WITH extracted AS (
-    SELECT 
-        [
-            k for k in json_keys(properties)
-            if (
-                (
-                    k LIKE 'name:%'
-                    AND k NOT LIKE 'name:%:%'
-                    AND substring(k, 6) NOT IN ('etymology', 'source', 'botanical', 'prefix', 'genitive', 'left', 'right', 'signed')
-                )
-                OR k IN ('alt_name', 'int_name')
-            )
-            AND json_extract_string(properties, '$."' || k || '"') != ''
-        ] AS name_keys,
-        properties
-    FROM mock_names_input
-)
-SELECT 
-    CAST(
-        map(
-            [CASE WHEN k LIKE 'name:%' THEN substring(k, 6) ELSE k END for k in name_keys],
-            [json_extract_string(properties, '$."' || k || '"') for k in name_keys]
-        ) AS MAP(VARCHAR, VARCHAR)
-    ) AS names_common
-FROM extracted;
+SELECT osm_names_common(properties) AS names_common
+FROM mock_names_input;
 
 SELECT 
     CASE 
@@ -286,7 +182,7 @@ SELECT
     END AS multilingual_check
 FROM mock_names_result;
 
--- Check 3.2: Micro-infrastructure filtering logic (benches/waste baskets dropped, post boxes kept)
+-- Check 3.2: Micro-infrastructure filtering logic via is_poi_candidate macro
 CREATE TEMP TABLE mock_micro_input AS
 SELECT 1 AS id, '{"amenity":"bench","operator":"City"}'::JSON AS properties
 UNION ALL
@@ -299,23 +195,9 @@ UNION ALL
 SELECT 5 AS id, '{"amenity":"bench","shop":"bakery","name":"Boulangerie"}'::JSON AS properties;
 
 CREATE TEMP TABLE mock_micro_filtered AS
-SELECT 
-    id,
-    COALESCE(json_extract_string(properties, '$.name'), json_extract_string(properties, '$.brand'), json_extract_string(properties, '$.operator'), CASE WHEN json_extract_string(properties, '$.amenity') = 'post_box' THEN 'Post Box' ELSE NULL END) AS name,
-    json_extract_string(properties, '$.amenity') AS amenity,
-    json_extract_string(properties, '$.shop') AS shop
+SELECT id, resolve_poi_name(properties) AS name
 FROM mock_micro_input
-WHERE (json_extract_string(properties, '$.name') IS NOT NULL 
-       OR json_extract_string(properties, '$.brand') IS NOT NULL 
-       OR json_extract_string(properties, '$.operator') IS NOT NULL
-       OR json_extract_string(properties, '$.amenity') = 'post_box')
-  AND (json_extract_string(properties, '$.amenity') IS NOT NULL 
-       OR json_extract_string(properties, '$.shop') IS NOT NULL)
-  AND (
-      json_extract_string(properties, '$.amenity') IS NULL 
-      OR json_extract_string(properties, '$.amenity') NOT IN ('bench', 'waste_basket', 'shelter', 'grit_bin', 'hunting_stand', 'feeding_place', 'waste_disposal', 'ticket_validator')
-      OR json_extract_string(properties, '$.shop') IS NOT NULL
-  );
+WHERE is_poi_candidate(properties);
 
 SELECT 
     CASE 
@@ -325,17 +207,10 @@ SELECT
     END AS micro_filter_check
 FROM mock_micro_filtered;
 
--- Check 3.3: Schema type definitions check (rules struct array, common map)
+-- Check 3.3: Schema type definitions check via empty_rules macro
 CREATE TEMP TABLE schema_type_check AS
 SELECT 
-    CAST(NULL AS STRUCT(
-        variant VARCHAR, 
-        "language" VARCHAR, 
-        perspectives STRUCT("mode" VARCHAR, countries VARCHAR[]), 
-        "value" VARCHAR, 
-        "between" DOUBLE[], 
-        side VARCHAR
-    )[]) AS rules_col,
+    empty_rules() AS rules_col,
     CAST(map(['en'], ['Test']) AS MAP(VARCHAR, VARCHAR)) AS common_col;
 
 SELECT 

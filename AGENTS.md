@@ -35,7 +35,11 @@ osm-pois/
 │   └── README.md                           # Provenance & license info for category mappings
 ├── scripts/
 │   ├── entrypoint.sh                       # CLI runner script for DuckDB conversion
-│   └── export_pois.sql                     # Core DuckDB SQL conversion logic
+│   ├── export_pois.sql                     # Core DuckDB SQL conversion orchestrator
+│   └── sql/                                # Modular DuckDB SQL components
+│       ├── 01_taxonomy.sql                 # Taxonomy & category mapping rules loader
+│       ├── 02_macros.sql                   # Reusable macros (names, brand, addresses, filters)
+│       └── 03_categorization.sql           # POI category resolution (Single Source of Truth)
 └── tests/
     ├── test_conversion.sh                  # Local integration test runner
     └── fixtures/                           # Test PBF fixtures (e.g. Monaco)
@@ -67,7 +71,7 @@ When modifying or generating code in this repository, you **MUST** follow these 
 7. **Tag Pipeline Invariant (Filter -> SQL)**:
    * Whenever a new OSM tag or subtag is introduced (e.g. `cuisine`, `railway`, `station`, `operator`):
      1. Ensure it is preserved by `osmium tags-filter` in `azure-pipelines.yml`.
-     2. Extract it in `raw_features` and handle it in the category mapping logic in `scripts/export_pois.sql`.
+     2. Extract it in `raw_features` and handle it in the category mapping logic in `scripts/sql/03_categorization.sql`.
    * Note: With `osmium export`, all OSM tags are preserved in the JSON `properties` object without requiring manual `config/osmconf.ini` schema adjustments.
 
 ---

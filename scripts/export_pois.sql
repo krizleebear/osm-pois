@@ -1,88 +1,24 @@
 -- DuckDB SQL: OSM PBF -> Overture Places-compatible GeoParquet
 LOAD spatial;
 
--- Load Overture category hierarchy from taxonomy CSV
-CREATE TEMP TABLE overture_taxonomy AS
-SELECT 
-    trim(column0) AS overture_cat,
-    str_split(replace(replace(trim(column1), '[', ''), ']', ''), ',') AS hierarchy
-FROM read_csv('__REPO_ROOT__/mappings/overture_categories.csv', header=False);
+-- Configure repository root for loading external mappings
+SET VARIABLE repo_root = '__REPO_ROOT__';
 
--- Load Category Mapping Rules (overture_to_osm_categories)
-CREATE TEMP TABLE category_rules AS
-SELECT 
-    trim(column0) AS overture_cat,
-    trim(column1) AS tag_expr,
-    split_part(split_part(trim(column1), ',', 1), '=', 1) AS primary_key,
-    split_part(split_part(trim(column1), ',', 1), '=', 2) AS primary_val,
-    split_part(split_part(trim(column1), ',', 2), '=', 1) AS sub_key,
-    split_part(split_part(trim(column1), ',', 2), '=', 2) AS sub_val,
-    split_part(split_part(trim(column1), ',', 3), '=', 1) AS sub3_key,
-    split_part(split_part(trim(column1), ',', 3), '=', 2) AS sub3_val,
-    length(split_part(trim(column1), ',', 2)) AS has_subtag
-FROM read_csv('__REPO_ROOT__/mappings/overture_to_osm_categories.csv', header=False);
-
--- Clean single primary mapping table (prefer exact single tag match, e.g. shop=clothes -> clothing_store)
-CREATE TEMP TABLE primary_rules AS
-SELECT DISTINCT ON (primary_key, primary_val)
-    overture_cat,
-    primary_key,
-    primary_val
-FROM category_rules
-ORDER BY primary_key, primary_val, has_subtag ASC, overture_cat ASC;
+-- Load modular SQL components
+.read __REPO_ROOT__/scripts/sql/01_taxonomy.sql
+.read __REPO_ROOT__/scripts/sql/02_macros.sql
+.read __REPO_ROOT__/scripts/sql/03_categorization.sql
 
 -- Extract Raw Features from Osmium GeoJSON stream (reconstructs 100% of points, ways, and polygons)
 CREATE TEMP TABLE raw_features AS
 WITH base_json AS (
     SELECT 
         geometry,
-        properties,
-        [
-            k for k in json_keys(properties)
-            if (
-                (
-                    k LIKE 'name:%'
-                    AND k NOT LIKE 'name:%:%'
-                    AND substring(k, 6) NOT IN ('etymology', 'source', 'botanical', 'prefix', 'genitive', 'left', 'right', 'signed')
-                )
-                OR k IN ('alt_name', 'int_name')
-            )
-            AND json_extract_string(properties, '$."' || k || '"') != ''
-        ] AS name_keys,
-        [
-            k for k in json_keys(properties)
-            if k LIKE 'brand:%'
-            AND k NOT LIKE 'brand:%:%'
-            AND substring(k, 7) NOT IN ('wikidata', 'wikipedia')
-            AND json_extract_string(properties, '$."' || k || '"') != ''
-        ] AS brand_keys
+        properties
     FROM read_json('__INPUT_JSONL__', 
                    format='newline_delimited', 
                    columns={'geometry': 'JSON', 'properties': 'JSON'})
-    WHERE (json_extract_string(properties, '$.name') IS NOT NULL 
-           OR json_extract_string(properties, '$.brand') IS NOT NULL 
-           OR json_extract_string(properties, '$.operator') IS NOT NULL
-           OR json_extract_string(properties, '$.amenity') = 'post_box')
-      AND (json_extract_string(properties, '$.amenity') IS NOT NULL 
-           OR json_extract_string(properties, '$.shop') IS NOT NULL 
-           OR json_extract_string(properties, '$.tourism') IS NOT NULL 
-           OR json_extract_string(properties, '$.leisure') IS NOT NULL 
-           OR json_extract_string(properties, '$.office') IS NOT NULL 
-           OR json_extract_string(properties, '$.craft') IS NOT NULL 
-           OR json_extract_string(properties, '$.healthcare') IS NOT NULL 
-           OR json_extract_string(properties, '$.historic') IS NOT NULL 
-           OR json_extract_string(properties, '$.railway') IS NOT NULL 
-           OR json_extract_string(properties, '$.aeroway') IS NOT NULL)
-      AND (
-          json_extract_string(properties, '$.amenity') IS NULL 
-          OR json_extract_string(properties, '$.amenity') NOT IN ('bench', 'waste_basket', 'shelter', 'grit_bin', 'hunting_stand', 'feeding_place', 'waste_disposal', 'ticket_validator')
-          OR json_extract_string(properties, '$.shop') IS NOT NULL
-          OR json_extract_string(properties, '$.tourism') IS NOT NULL
-          OR json_extract_string(properties, '$.historic') IS NOT NULL
-          OR json_extract_string(properties, '$.office') IS NOT NULL
-          OR json_extract_string(properties, '$.craft') IS NOT NULL
-          OR json_extract_string(properties, '$.healthcare') IS NOT NULL
-      )
+    WHERE is_poi_candidate(properties)
       AND geometry IS NOT NULL
       AND ST_IsValid(ST_GeomFromGeoJSON(geometry))
 )
@@ -94,19 +30,9 @@ SELECT
         THEN strftime(to_timestamp(TRY_CAST(json_extract_string(properties, '$.@timestamp') AS BIGINT)), '%Y-%m-%dT%H:%M:%SZ') 
         ELSE NULL 
     END AS osm_timestamp,
-    COALESCE(json_extract_string(properties, '$.name'), json_extract_string(properties, '$.brand'), json_extract_string(properties, '$.operator'), CASE WHEN json_extract_string(properties, '$.amenity') = 'post_box' THEN 'Post Box' ELSE NULL END) AS name,
-    CAST(
-        map(
-            [CASE WHEN k LIKE 'name:%' THEN substring(k, 6) ELSE k END for k in name_keys],
-            [json_extract_string(properties, '$."' || k || '"') for k in name_keys]
-        ) AS MAP(VARCHAR, VARCHAR)
-    ) AS names_common,
-    CAST(
-        map(
-            [substring(k, 7) for k in brand_keys],
-            [json_extract_string(properties, '$."' || k || '"') for k in brand_keys]
-        ) AS MAP(VARCHAR, VARCHAR)
-    ) AS brand_common,
+    resolve_poi_name(properties) AS name,
+    osm_names_common(properties) AS names_common,
+    osm_brand_common(properties) AS brand_common,
     json_extract_string(properties, '$.amenity') AS amenity,
     json_extract_string(properties, '$.religion') AS religion,
     json_extract_string(properties, '$.denomination') AS denomination,
@@ -144,70 +70,10 @@ COPY (
     WITH categorized AS (
         SELECT 
             f.*,
-            COALESCE(
-                -- 1. Cuisine-specific restaurant match (e.g. amenity=restaurant,cuisine=italian -> italian_restaurant)
-                CASE WHEN f.amenity = 'restaurant' AND f.cuisine IS NOT NULL THEN
-                    (SELECT r.overture_cat FROM category_rules r 
-                     WHERE r.primary_key = 'amenity' AND r.primary_val = 'restaurant' 
-                       AND r.sub_key = 'cuisine' AND r.sub_val = split_part(f.cuisine, ';', 1) 
-                     ORDER BY r.overture_cat ASC
-                     LIMIT 1)
-                END,
-                -- 2. Transit station subtag match (e.g. railway=station,station=subway -> light_rail_and_subway_station)
-                CASE WHEN f.railway = 'station' AND f.station IS NOT NULL THEN
-                    (SELECT r.overture_cat FROM category_rules r 
-                     WHERE r.primary_key = 'railway' AND r.primary_val = 'station' 
-                       AND r.sub_key = 'station' AND r.sub_val = f.station 
-                     ORDER BY r.overture_cat ASC
-                     LIMIT 1)
-                END,
-                -- 3. Place of worship denomination & religion subtag match (e.g. amenity=place_of_worship,religion=christian,denomination=catholic -> catholic_church)
-                CASE WHEN f.amenity = 'place_of_worship' THEN
-                    COALESCE(
-                        -- 3-tag match: amenity=place_of_worship, religion=..., denomination=...
-                        CASE WHEN f.religion IS NOT NULL AND f.denomination IS NOT NULL THEN
-                            (SELECT r.overture_cat FROM category_rules r 
-                             WHERE r.primary_key = 'amenity' AND r.primary_val = 'place_of_worship' 
-                               AND r.sub_key = 'religion' AND r.sub_val = split_part(f.religion, ';', 1)
-                               AND r.sub3_key = 'denomination' AND r.sub3_val = split_part(f.denomination, ';', 1)
-                             LIMIT 1)
-                        END,
-                        -- 2-tag match by denomination: amenity=place_of_worship, denomination=...
-                        CASE WHEN f.denomination IS NOT NULL THEN
-                            (SELECT r.overture_cat FROM category_rules r 
-                             WHERE r.primary_key = 'amenity' AND r.primary_val = 'place_of_worship' 
-                               AND (
-                                   (r.sub_key = 'denomination' AND r.sub_val = split_part(f.denomination, ';', 1)) OR
-                                   (r.sub3_key = 'denomination' AND r.sub3_val = split_part(f.denomination, ';', 1))
-                               )
-                             LIMIT 1)
-                        END,
-                        -- 2-tag match by religion: amenity=place_of_worship, religion=...
-                        CASE WHEN f.religion IS NOT NULL THEN
-                            (SELECT r.overture_cat FROM category_rules r 
-                             WHERE r.primary_key = 'amenity' AND r.primary_val = 'place_of_worship' 
-                               AND r.sub_key = 'religion' AND r.sub_val = split_part(f.religion, ';', 1)
-                               AND (r.sub3_key IS NULL OR r.sub3_key = '')
-                             LIMIT 1)
-                        END
-                    )
-                END,
-                -- 4. Primary tag matches from deterministic rule table
-                (SELECT r.overture_cat FROM primary_rules r WHERE r.primary_key = 'amenity' AND r.primary_val = f.amenity),
-                (SELECT r.overture_cat FROM primary_rules r WHERE r.primary_key = 'shop' AND r.primary_val = f.shop),
-                (SELECT r.overture_cat FROM primary_rules r WHERE r.primary_key = 'tourism' AND r.primary_val = f.tourism),
-                (SELECT r.overture_cat FROM primary_rules r WHERE r.primary_key = 'leisure' AND r.primary_val = f.leisure),
-                (SELECT r.overture_cat FROM primary_rules r WHERE r.primary_key = 'office' AND r.primary_val = f.office),
-                (SELECT r.overture_cat FROM primary_rules r WHERE r.primary_key = 'craft' AND r.primary_val = f.craft),
-                (SELECT r.overture_cat FROM primary_rules r WHERE r.primary_key = 'healthcare' AND r.primary_val = f.healthcare),
-                (SELECT r.overture_cat FROM primary_rules r WHERE r.primary_key = 'historic' AND r.primary_val = f.historic),
-                (SELECT r.overture_cat FROM primary_rules r WHERE r.primary_key = 'railway' AND r.primary_val = f.railway),
-                (SELECT r.overture_cat FROM primary_rules r WHERE r.primary_key = 'aeroway' AND r.primary_val = f.aeroway),
-                f.amenity,
-                f.shop,
-                f.tourism,
-                f.leisure,
-                'point_of_interest'
+            resolve_poi_category(
+                f.amenity, f.shop, f.tourism, f.leisure, f.office,
+                f.craft, f.healthcare, f.historic, f.railway, f.aeroway,
+                f.cuisine, f.station, f.religion, f.denomination
             ) AS main_category
         FROM raw_features f
     )
@@ -228,40 +94,16 @@ COPY (
             'names': {
                 'primary': brand, 
                 'common': brand_common, 
-                'rules': CAST(NULL AS STRUCT(
-                    variant VARCHAR, 
-                    "language" VARCHAR, 
-                    perspectives STRUCT("mode" VARCHAR, countries VARCHAR[]), 
-                    "value" VARCHAR, 
-                    "between" DOUBLE[], 
-                    side VARCHAR
-                )[])
+                'rules': empty_rules()
             }
         } AS brand,
         -- Addresses array
-        CASE 
-            WHEN addr_street IS NOT NULL OR addr_postcode IS NOT NULL OR addr_city IS NOT NULL 
-            THEN [{
-                'freeform': CASE WHEN addr_street IS NOT NULL AND addr_housenumber IS NOT NULL THEN addr_street || ' ' || addr_housenumber ELSE addr_street END,
-                'locality': addr_city,
-                'postcode': addr_postcode,
-                'region': NULL,
-                'country': '__COUNTRY_CODE__'
-            }]
-            ELSE CAST([] AS struct(freeform varchar, locality varchar, postcode varchar, region varchar, country varchar)[])
-        END AS addresses,
+        format_address(addr_street, addr_housenumber, addr_city, addr_postcode, '__COUNTRY_CODE__') AS addresses,
         -- Names struct
         {
             'primary': name,
             'common': names_common,
-            'rules': CAST(NULL AS STRUCT(
-                variant VARCHAR, 
-                "language" VARCHAR, 
-                perspectives STRUCT("mode" VARCHAR, countries VARCHAR[]), 
-                "value" VARCHAR, 
-                "between" DOUBLE[], 
-                side VARCHAR
-            )[])
+            'rules': empty_rules()
         } AS names,
         -- Sources array
         [{
