@@ -37,8 +37,74 @@ TMP_SQL=$(mktemp /tmp/export_XXXXXX.sql)
 TMP_DIR=$(mktemp -d /tmp/duckdb_spill_XXXXXX)
 mkfifo "$TMP_FIFO"
 
+get_rss_kb() {
+    local target_pid="$1"
+    if [ -z "$target_pid" ] || [ ! -d "/proc/$target_pid" ]; then
+        echo 0
+        return
+    fi
+    local total=0
+    local self_rss
+    self_rss=$(awk '/VmRSS:/ {print $2}' "/proc/$target_pid/status" 2>/dev/null || echo 0)
+    total=$((total + ${self_rss:-0}))
+
+    # Inspect direct children (e.g. for subshells like osmium export | tr)
+    local children=""
+    if [ -f "/proc/$target_pid/task/$target_pid/children" ]; then
+        children=$(cat "/proc/$target_pid/task/$target_pid/children" 2>/dev/null || true)
+    fi
+    if [ -z "$children" ] && command -v pgrep >/dev/null 2>&1; then
+        children=$(pgrep -P "$target_pid" 2>/dev/null || true)
+    fi
+
+    for cpid in $children; do
+        if [ -d "/proc/$cpid" ]; then
+            local crss
+            crss=$(awk '/VmRSS:/ {print $2}' "/proc/$cpid/status" 2>/dev/null || echo 0)
+            total=$((total + ${crss:-0}))
+        fi
+    done
+
+    # Fallback to ps if /proc yielded 0 and ps binary is present
+    if [ "$total" -le 0 ] && command -v ps >/dev/null 2>&1; then
+        local raw_ps
+        raw_ps=$(ps -o rss= -p "$target_pid" 2>/dev/null | tr -d ' \t\n')
+        total=${raw_ps:-0}
+    fi
+
+    echo "$total"
+}
+
+format_mem() {
+    local kb="$1"
+    if [ -z "$kb" ] || [ "$kb" -le 0 ] 2>/dev/null; then
+        echo "0.0 MB"
+    elif [ "$kb" -gt 1048576 ] 2>/dev/null; then
+        awk "BEGIN {printf \"%.2f GB\", $kb/1048576}"
+    else
+        awk "BEGIN {printf \"%.1f MB\", $kb/1024}"
+    fi
+}
+
+stop_monitor() {
+    if [ -n "${MONITOR_PID:-}" ]; then
+        kill "$MONITOR_PID" 2>/dev/null || true
+        if [ -f "/proc/$MONITOR_PID/task/$MONITOR_PID/children" ]; then
+            for cpid in $(cat "/proc/$MONITOR_PID/task/$MONITOR_PID/children" 2>/dev/null || true); do
+                kill "$cpid" 2>/dev/null || true
+            done
+        fi
+        if command -v pkill >/dev/null 2>&1; then
+            pkill -P "$MONITOR_PID" 2>/dev/null || true
+        fi
+        wait "$MONITOR_PID" 2>/dev/null || true
+        MONITOR_PID=""
+    fi
+}
+
 cleanup() {
-    kill "$MONITOR_PID" "$DUCKDB_PID" "$OSMIUM_PID" 2>/dev/null || true
+    stop_monitor
+    kill "$DUCKDB_PID" "$OSMIUM_PID" 2>/dev/null || true
     rm -rf "$TMP_FIFO" "$TMP_SQL" "$TMP_DIR"
 }
 trap cleanup EXIT INT TERM
@@ -48,34 +114,59 @@ monitor_resources() {
     set +e
     local duck_pid="$1"
     local osm_pid="$2"
-    local m_start=$(date +%s)
+    local m_start
+    m_start=$(date +%s)
+    local sleep_pid=""
+
+    cleanup_monitor() {
+        if [ -n "$sleep_pid" ]; then
+            kill "$sleep_pid" 2>/dev/null || true
+            wait "$sleep_pid" 2>/dev/null || true
+        fi
+        exit 0
+    }
+    trap cleanup_monitor TERM INT EXIT
+
     while kill -0 "$duck_pid" 2>/dev/null || kill -0 "$osm_pid" 2>/dev/null; do
-        sleep 15
+        sleep 15 &
+        sleep_pid=$!
+        wait "$sleep_pid" 2>/dev/null || true
+        sleep_pid=""
+
         if ! kill -0 "$duck_pid" 2>/dev/null && ! kill -0 "$osm_pid" 2>/dev/null; then
             break
         fi
-        local now=$(date +%s)
+
+        local now
+        now=$(date +%s)
         local elapsed=$((now - m_start))
         local mins=$((elapsed / 60))
         local secs=$((elapsed % 60))
-        local duck_rss="0 MB"
-        local osm_rss="0 MB"
+
+        local duck_rss="0.0 MB"
+        local osm_rss="0.0 MB"
+
         if [ -n "$duck_pid" ] && kill -0 "$duck_pid" 2>/dev/null; then
-            local raw_duck=$(ps -o rss= -p "$duck_pid" 2>/dev/null | tr -d ' \t\n')
-            raw_duck=${raw_duck:-0}
-            if [ "$raw_duck" -gt 1048576 ] 2>/dev/null; then
-                duck_rss=$(awk "BEGIN {printf \"%.2f GB\", $raw_duck/1048576}")
-            else
-                duck_rss=$(awk "BEGIN {printf \"%.1f MB\", $raw_duck/1024}")
-            fi
+            local raw_duck
+            raw_duck=$(get_rss_kb "$duck_pid")
+            duck_rss=$(format_mem "$raw_duck")
+        elif [ -n "$duck_pid" ]; then
+            duck_rss="done"
         fi
+
         if [ -n "$osm_pid" ] && kill -0 "$osm_pid" 2>/dev/null; then
-            local raw_osm=$(ps -o rss= -p "$osm_pid" 2>/dev/null | tr -d ' \t\n')
-            raw_osm=${raw_osm:-0}
-            osm_rss=$(awk "BEGIN {printf \"%.1f MB\", $raw_osm/1024}")
+            local raw_osm
+            raw_osm=$(get_rss_kb "$osm_pid")
+            osm_rss=$(format_mem "$raw_osm")
+        elif [ -n "$osm_pid" ]; then
+            osm_rss="done"
         fi
-        local mem_avail=$(awk '/MemAvailable/ {printf "%.1f GB", $2/1048576}' /proc/meminfo 2>/dev/null || echo "N/A")
-        local disk_free=$(df -h "$TMP_DIR" 2>/dev/null | awk 'NR==2 {print $4}' || echo "N/A")
+
+        local mem_avail
+        mem_avail=$(awk '/MemAvailable/ {printf "%.1f GB", $2/1048576}' /proc/meminfo 2>/dev/null || echo "N/A")
+        local disk_free
+        disk_free=$(df -h "$TMP_DIR" 2>/dev/null | awk 'NR==2 {print $4}' || echo "N/A")
+
         echo "[HEARTBEAT $(printf "%02d:%02d" $mins $secs)] DuckDB RSS: $duck_rss | Osmium RSS: $osm_rss | SysMemAvail: $mem_avail | DiskFree: $disk_free"
     done
 }
@@ -105,7 +196,7 @@ MONITOR_PID=$!
 
 wait "$DUCKDB_PID"
 DUCKDB_EXIT=$?
-kill "$MONITOR_PID" 2>/dev/null || true
+stop_monitor
 
 wait "$OSMIUM_PID"
 OSMIUM_EXIT=$?
