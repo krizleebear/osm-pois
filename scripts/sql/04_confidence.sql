@@ -167,6 +167,6 @@ CREATE OR REPLACE MACRO calculate_poi_confidence(
                 )
             ),
             2
-        )
+        )::DOUBLE
     FROM evaluated_signals
 );

@@ -50,15 +50,21 @@ To ensure the browser stays responsive even when inspecting massive datasets (li
 
 ### 4. Dual-Panel UI Architecture
 To prevent vertical crowding and ensure deep inspection of rich Overture schema fields:
+* **Header Bar**:
+  * Displays real-time connection status, viewport zoom, POI render count, and a persistent **📦 File & Compiler Version Badge** (`compiler_version` • export date / age) that jumps directly to dataset provenance on click.
 * **Left Panel (Controls & Dataset)**:
   1. **Quick Extent Jump**: One-click bounds fitting (`Fit Dataset`) and shortcuts to major cities.
-  2. **Filters**: Real-time filtering by POI name or primary category (top 50 categories).
-  3. **Active Dataset & Provenance**: Live row count and Parquet KV metadata (compiler version, export timestamp, schema, ODbL license, attribution, and country code badge).
+  2. **Filters**: Real-time filtering by POI name, primary category (top 50 categories), **POI Quality / Minimum Confidence** (Top Quality ≥85%, High ≥70%, Standard ≥55%, Basic ≥40%, Low/Stale <40%), and **Operational Attributes** (With Hours, With Wheelchair, With Cuisine, With Brand, With Contact).
+  3. **Active Dataset & Provenance**: Live row count, file size, dataset age, and comprehensive Parquet KV metadata (compiler, compiler version, export timestamp, country code badge, schema, ODbL and CC-BY-4.0 licenses, and attribution links).
   4. **OSM Basemap & Gap Detection**: Opacity controls and the `⚡ Blink Overlay` toggle.
   5. **Level of Detail (LOD) Rules**: Configurable zoom thresholds and sample limits.
 * **Right Panel (POI Details Inspector)**:
   * Dedicated floating panel that automatically opens when a POI circle marker is clicked.
-  * Shows full schema properties: name, primary/basic categories, operating status, OSM revision (`v14`), last edit timestamp, address, coordinates, phone, website, and direct links to the OSM object and its version history.
+  * **POI Quality & Confidence**: Displays the calculated upstream confidence score (0.10 - 0.99) with color-coded rating tier, animated progress bar, and contributing quality signal badges (Hours, Contact, Address, Wheelchair, Brand, Mature revision).
+  * **Opening Hours**: Formatted opening hours block with automatic `Open 24/7` detection.
+  * **Operational & Accessibility Depth**: Wheelchair accessibility badge (Accessible, Limited, Not accessible, Designated), payment methods chips (Cash, Cards, Contactless), cuisine tags, floor/level, operator, and delivery/takeaway indicators.
+  * **Brand & Identity**: Primary brand name and direct links to Wikidata entity records.
+  * **Core Schema & Provenance**: Name, primary/basic categories, operating status, OSM revision (`v14`), last edit timestamp, address, coordinates, phone, website, email, and direct links to the OSM object and its version history.
   * Can be toggled independently via the `POI Details` button in the header.
 
 ### 5. Stale File Handle & Recompilation Diagnostics

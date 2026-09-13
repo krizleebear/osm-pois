@@ -29,20 +29,31 @@ This document defines guidelines, design principles, and technical invariants fo
 To prevent vertical crowding and ensure seamless inspection of rich Overture schema fields, the viewer strictly follows a **Dual-Panel Architecture**:
 
 1. **Left Panel (`#sidebar`) — Controls & Dataset**:
-   * Fixed logical section hierarchy:
-     1. **Quick Extent Jump** (`Fit Dataset` highlighted, plus city jump shortcuts)
-     2. **Filters** (`Filter by Name...` text input, Category dropdown)
-     3. **Active Dataset & Metadata** (Dataset name, total POI count, and the Parquet KV metadata card with compiler version, export timestamp, schema, ODbL license, attribution, and country code)
-     4. **OSM Basemap & Gap Detection** (Basemap selector, opacity sliders, blink overlay button)
-     5. **Level of Detail (LOD) Rules** (Full detail zoom threshold slider, overview max POIs slider)
-   * **No Redundant In-Panel Drop Zones or Presets**:
-     * In-panel drop boxes and preset selection dropdowns are omitted to preserve vertical space.
-     * File loading is handled globally via full-window drag-and-drop (`fullDropOverlay`) or the header `📂 Load Parquet` button.
-   * **No Bulky Legend Blocks**: Category legend grids are omitted from the panel; circle markers retain their category colors.
+    * Fixed logical section hierarchy:
+      1. **Quick Extent Jump** (`Fit Dataset` highlighted, plus city jump shortcuts)
+      2. **Filters** (`Filter by Name...` text input, Category dropdown, POI Quality / Confidence dropdown, Operational Attribute dropdown)
+      3. **Active Dataset & Metadata** (Dataset name, total POI count, file size, dataset age, and the Parquet KV metadata card with compiler version, export timestamp, schema, ODbL and CC-BY-4.0 licenses, attribution, and country code)
+      4. **OSM Basemap & Gap Detection** (Basemap selector, opacity sliders, blink overlay button)
+      5. **Level of Detail (LOD) Rules** (Full detail zoom threshold slider, overview max POIs slider)
+    * **No Redundant In-Panel Drop Zones or Presets**:
+      * In-panel drop boxes and preset selection dropdowns are omitted to preserve vertical space.
+      * File loading is handled globally via full-window drag-and-drop (`fullDropOverlay`) or the header `📂 Load Parquet` button.
+    * **No Bulky Legend Blocks**: Category legend grids are omitted from the panel; circle markers retain their category colors.
 
 2. **Right Panel (`#inspectorPanel`) — POI Details Inspector**:
-   * Positioned on the top-right (`.sidebar-right`).
-   * Displays an initial placeholder when no feature is selected.
-   * Automatically opens (`classList.remove('collapsed')`) whenever a POI marker is clicked on the map.
-   * Displays full schema attributes: Name, Category, Basic Category, Operating Status, OSM Version (`v14`), Last OSM Edit timestamp, Source & License, Address, Coordinates, Website, Phone, and direct links to the OSM object and its version history.
-   * Can be toggled independently via the header button `POI Details` and closed via `✕`.
+    * Positioned on the top-right (`.sidebar-right`).
+    * Displays an initial placeholder when no feature is selected.
+    * Automatically opens (`classList.remove('collapsed')`) whenever a POI marker is clicked on the map.
+    * Displays full schema attributes:
+      - **POI Quality & Confidence Score**: Color-coded score (0.10 - 0.99), tier label, animated progress meter, and quality signal badges.
+      - **Opening Hours**: Formatted opening hours card with `Open 24/7` detection.
+      - **Operational & Accessibility Depth**: Wheelchair accessibility badge, payment methods chips, cuisine tags, floor/level, operator, and delivery/takeaway indicators.
+      - **Brand & Identity**: Primary brand name and direct links to Wikidata.
+      - **Core Schema**: Name, Category, Basic Category, Operating Status, OSM Version (`v14`), Last OSM Edit timestamp, Source & License, Address, Coordinates, Website, Phone, Email, and direct links to the OSM object and its version history.
+    * Can be toggled independently via the header button `POI Details` and closed via `✕`.
+
+### 3. Resilient Schema Column Projection Invariant
+* **Problem**: Parquet files ingested into the viewer can originate from official Overture releases, older `osm-pois` compiler builds, or modern superset builds containing operational attributes (`opening_hours`, `wheelchair`, `payment_methods`, `cuisine`, `level`, `operator`, `delivery`, `takeaway`, `confidence`). Unconditionally projecting missing columns in DuckDB SQL triggers a `Binder Error: Referenced column not found in FROM clause`.
+* **Invariant**:
+  * Upon registering any Parquet file, the viewer must inspect available columns via `DESCRIBE SELECT * FROM '<filename>'` into an `availableColumns` Set.
+  * Viewport queries must project optional attributes conditionally (`availableColumns.has('col') ? 'col' : 'NULL AS col'`), guaranteeing zero binder crashes across legacy, standard Overture, and modern superset GeoParquet files.

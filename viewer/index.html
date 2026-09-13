@@ -320,6 +320,24 @@
       gap: 6px;
     }
 
+    details.inspector-card {
+      display: block;
+    }
+
+    details.inspector-card summary {
+      cursor: pointer;
+      list-style: none;
+      outline: none;
+    }
+
+    details.inspector-card summary::-webkit-details-marker {
+      display: none;
+    }
+
+    details.inspector-card[open] .meta-toggle-icon {
+      transform: rotate(90deg);
+    }
+
     .inspector-row {
       display: flex;
       justify-content: space-between;
@@ -337,6 +355,83 @@
       font-weight: 600;
       text-align: right;
       word-break: break-all;
+    }
+
+    /* Quality Meter / Progress Bar */
+    .quality-bar-bg {
+      width: 100%;
+      height: 6px;
+      background: #334155;
+      border-radius: 3px;
+      overflow: hidden;
+      margin-top: 3px;
+    }
+
+    .quality-bar-fill {
+      height: 100%;
+      border-radius: 3px;
+      transition: width 0.3s ease;
+    }
+
+    /* Chips & Badges */
+    .chip {
+      font-size: 0.7rem;
+      padding: 2px 6px;
+      border-radius: 4px;
+      background: #1e293b;
+      border: 1px solid #334155;
+      color: #cbd5e1;
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      font-weight: 500;
+    }
+
+    .chip-green {
+      border-color: rgba(16, 185, 129, 0.4);
+      color: #34d399;
+      background: rgba(16, 185, 129, 0.12);
+    }
+
+    .chip-blue {
+      border-color: rgba(56, 189, 248, 0.4);
+      color: #38bdf8;
+      background: rgba(56, 189, 248, 0.12);
+    }
+
+    .chip-amber {
+      border-color: rgba(245, 158, 11, 0.4);
+      color: #fbbf24;
+      background: rgba(245, 158, 11, 0.12);
+    }
+
+    .chip-red {
+      border-color: rgba(244, 63, 94, 0.4);
+      color: #fb7185;
+      background: rgba(244, 63, 94, 0.12);
+    }
+
+    .chip-purple {
+      border-color: rgba(168, 85, 247, 0.4);
+      color: #c084fc;
+      background: rgba(168, 85, 247, 0.12);
+    }
+
+    .hours-box {
+      background: rgba(30, 41, 59, 0.7);
+      border: 1px solid #334155;
+      border-radius: 6px;
+      padding: 6px 8px;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+      font-size: 0.74rem;
+      color: #f1f5f9;
+      word-break: break-word;
+      line-height: 1.4;
+    }
+
+    #fileVersionBadge:hover {
+      border-color: var(--accent);
+      background: rgba(56, 189, 248, 0.1);
     }
 
     /* Category Legend */
@@ -472,6 +567,12 @@
         <span id="statusDot" class="status-dot"></span>
         <span id="statusText">Initializing DuckDB-Wasm...</span>
       </div>
+      <div id="fileVersionBadge" class="status-badge" style="display: none; cursor: pointer;" title="Dataset Compiler &amp; Export Info (Click to view dataset panel)">
+        <span style="font-size: 0.85rem;">📦</span>
+        <span id="headerCompilerVer" style="color: #38bdf8; font-weight: 700;">osm-pois</span>
+        <span style="color: #64748b;">•</span>
+        <span id="headerExportedAt" style="color: #cbd5e1;">--</span>
+      </div>
     </div>
 
     <div class="header-center">
@@ -520,6 +621,24 @@
         <select id="categoryFilterSelect" style="margin-top: 6px;">
           <option value="">All Categories</option>
         </select>
+        <div style="display: flex; gap: 6px; margin-top: 6px;">
+          <select id="confidenceFilterSelect" style="flex: 1;" title="Filter by minimum POI quality/confidence score">
+            <option value="0">All Quality Levels</option>
+            <option value="0.85">⭐ Top Quality (≥ 85%)</option>
+            <option value="0.70">✓ High Quality+ (≥ 70%)</option>
+            <option value="0.55">● Standard+ (≥ 55%)</option>
+            <option value="0.40">▲ Basic+ (≥ 40%)</option>
+            <option value="low_only">⚠ Low / Stale Only (&lt; 40%)</option>
+          </select>
+          <select id="operationalFilterSelect" style="flex: 1;" title="Filter by operational data availability">
+            <option value="all">All Attributes</option>
+            <option value="has_hours">🕒 With Hours</option>
+            <option value="has_wheelchair">♿ With Wheelchair</option>
+            <option value="has_cuisine">🍽️ With Cuisine</option>
+            <option value="has_brand">🏷️ With Brand</option>
+            <option value="has_contact">📞 With Contact</option>
+          </select>
+        </div>
       </div>
 
       <!-- 3 (User 1): Active Dataset & Parquet Metadata -->
@@ -529,37 +648,53 @@
           <span id="datasetSize" style="font-size: 0.72rem; color: #38bdf8; font-weight: 600;">No file loaded</span>
         </div>
 
-        <!-- Dataset Provenance & Metadata Card -->
-        <div id="datasetMetaCard" class="inspector-card" style="display: none; margin-top: 2px;">
-          <div style="font-weight: 700; color: #f8fafc; margin-bottom: 4px; border-bottom: 1px solid #334155; padding-bottom: 3px; display: flex; justify-content: space-between;">
-            <span>Parquet Metadata</span>
-            <span id="metaCountryCode" style="color: #38bdf8; font-weight: 600;"></span>
+        <!-- Dataset Provenance & Metadata Card (Collapsible, closed by default) -->
+        <details id="datasetMetaCard" class="inspector-card" style="display: none; margin-top: 2px;">
+          <summary style="font-weight: 700; color: #f8fafc; display: flex; justify-content: space-between; align-items: center; user-select: none;">
+            <div style="display: flex; align-items: center; gap: 6px;">
+              <span class="meta-toggle-icon" style="font-size: 0.65rem; color: #94a3b8; transition: transform 0.2s ease; display: inline-block;">▶</span>
+              <span>Dataset Provenance</span>
+            </div>
+            <div style="display: flex; gap: 4px; align-items: center;">
+              <span id="metaCountryCode" class="chip chip-blue" style="display: none;"></span>
+              <span id="metaFileSize" class="chip" style="color: #94a3b8; font-size: 0.68rem; display: none;"></span>
+            </div>
+          </summary>
+          <div style="margin-top: 8px; border-top: 1px solid #334155; padding-top: 6px; display: flex; flex-direction: column; gap: 6px;">
+            <div class="inspector-row">
+              <span class="inspector-key">Compiler:</span>
+              <span id="metaCompiler" class="inspector-val">osm-pois</span>
+            </div>
+            <div class="inspector-row">
+              <span class="inspector-key">Compiler Version:</span>
+              <span id="metaCompilerVersion" class="inspector-val" style="color: #38bdf8; font-weight: 700;">--</span>
+            </div>
+            <div class="inspector-row">
+              <span class="inspector-key">Created / Exported:</span>
+              <span id="metaExportedAt" class="inspector-val">--</span>
+            </div>
+            <div class="inspector-row" id="metaAgeRow" style="display: none;">
+              <span class="inspector-key">Dataset Age:</span>
+              <span id="metaAge" class="inspector-val" style="color: #94a3b8; font-weight: normal;">--</span>
+            </div>
+            <div class="inspector-row">
+              <span class="inspector-key">Schema:</span>
+              <span id="metaSchema" class="inspector-val">Overture Places</span>
+            </div>
+            <div class="inspector-row">
+              <span class="inspector-key">Data License:</span>
+              <span id="metaLicense" class="inspector-val">ODbL-1.0</span>
+            </div>
+            <div class="inspector-row">
+              <span class="inspector-key">Schema Lic:</span>
+              <span id="metaSchemaLicense" class="inspector-val">CC-BY-4.0</span>
+            </div>
+            <div class="inspector-row">
+              <span class="inspector-key">Attribution:</span>
+              <span id="metaAttribution" class="inspector-val">© OSM | Schema © Overture</span>
+            </div>
           </div>
-          <div class="inspector-row">
-            <span class="inspector-key">Compiler Version:</span>
-            <span id="metaCompilerVersion" class="inspector-val">--</span>
-          </div>
-          <div class="inspector-row">
-            <span class="inspector-key">Exported:</span>
-            <span id="metaExportedAt" class="inspector-val">--</span>
-          </div>
-          <div class="inspector-row">
-            <span class="inspector-key">Schema:</span>
-            <span id="metaSchema" class="inspector-val">--</span>
-          </div>
-          <div class="inspector-row">
-            <span class="inspector-key">Data License:</span>
-            <span id="metaLicense" class="inspector-val">ODbL-1.0</span>
-          </div>
-          <div class="inspector-row">
-            <span class="inspector-key">Schema Lic:</span>
-            <span id="metaSchemaLicense" class="inspector-val">CC-BY-4.0</span>
-          </div>
-          <div class="inspector-row">
-            <span class="inspector-key">Attribution:</span>
-            <span id="metaAttribution" class="inspector-val">© OSM | Schema © Overture</span>
-          </div>
-        </div>
+        </details>
       </div>
 
       <!-- 4 (User 4): Gap Analysis & Basemap Controls -->
@@ -650,11 +785,50 @@
   let db = null;
   let conn = null;
   let currentParquetName = null;
+  let currentFile = null;
+  let availableColumns = new Set();
   let datasetBounds = null;
   let totalDatasetRows = 0;
   let isQueryInProgress = false;
   let pendingQueryTimeout = null;
   let blinkInterval = null;
+
+  // Utility helpers
+  function escapeHtml(str) {
+    if (!str) return '';
+    return String(str)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#039;');
+  }
+
+  function formatBytes(bytes) {
+    if (!bytes || bytes === 0) return '0 B';
+    const k = 1024;
+    const sizes = ['B', 'KB', 'MB', 'GB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
+  }
+
+  function formatRelativeTime(dateStr) {
+    if (!dateStr) return '';
+    const d = new Date(dateStr);
+    if (isNaN(d.getTime())) return '';
+    const diffSec = Math.round((Date.now() - d.getTime()) / 1000);
+    if (diffSec < 0) return 'recently';
+    if (diffSec < 60) return 'just now';
+    const diffMin = Math.round(diffSec / 60);
+    if (diffMin < 60) return `${diffMin}m ago`;
+    const diffHour = Math.round(diffMin / 60);
+    if (diffHour < 24) return `${diffHour}h ago`;
+    const diffDays = Math.round(diffHour / 24);
+    if (diffDays === 1) return 'yesterday';
+    if (diffDays < 30) return `${diffDays}d ago`;
+    const diffMonths = Math.round(diffDays / 30);
+    return `${diffMonths}mo ago`;
+  }
 
   // Category Color Map (Overture groups)
   const CATEGORY_COLORS = {
@@ -824,6 +998,7 @@
     showBanner(`Registering Parquet file: ${file.name}...`);
 
     try {
+      currentFile = file;
       currentParquetName = file.name;
       await db.registerFileHandle(currentParquetName, file, duckdb.DuckDBDataProtocol.BROWSER_FILEREADER, true);
       await postLoadParquet();
@@ -857,6 +1032,7 @@
     showBanner(`Fetching ${displayName}...`);
 
     try {
+      currentFile = null;
       // Test if URL exists, fallback to ../ if 404
       let targetUrl = url;
       try {
@@ -882,6 +1058,15 @@
   async function postLoadParquet() {
     const statusDot = document.getElementById('statusDot');
     const statusText = document.getElementById('statusText');
+
+    // Inspect available columns in the loaded Parquet file for resilient compatibility
+    try {
+      const colsRes = await conn.query(`SELECT column_name FROM (DESCRIBE SELECT * FROM '${currentParquetName}')`);
+      availableColumns = new Set(colsRes.toArray().map(r => r.toJSON().column_name));
+    } catch (e) {
+      console.warn('Could not describe columns:', e);
+      availableColumns = new Set(['id', 'names', 'categories', 'bbox']);
+    }
 
     // Total Count & Extent
     const statsQuery = `
@@ -927,34 +1112,98 @@
     });
 
     // Read Parquet KV Metadata if available
+    let meta = {};
     try {
-      const metaRes = await conn.query(`SELECT key, CAST(value AS VARCHAR) AS val FROM parquet_kv_metadata('${currentParquetName}')`);
+      const metaRes = await conn.query(`SELECT CAST(key AS VARCHAR) AS k, CAST(value AS VARCHAR) AS v FROM parquet_kv_metadata('${currentParquetName}')`);
       const metaRows = metaRes.toArray().map(r => r.toJSON());
-      const meta = {};
-      metaRows.forEach(r => { meta[r.key] = r.val; });
-
-      const metaCard = document.getElementById('datasetMetaCard');
-      if (meta.compiler_version || meta.exported_at || meta.attribution || meta.source) {
-        document.getElementById('metaCompilerVersion').textContent = meta.compiler_version || 'N/A';
-        document.getElementById('metaExportedAt').textContent = meta.exported_at ? meta.exported_at.replace('T', ' ').replace('Z', ' UTC') : 'N/A';
-        document.getElementById('metaSchema').textContent = meta.schema || 'Overture Places';
-        document.getElementById('metaLicense').textContent = meta.license ? meta.license.split(' ')[0] : 'ODbL-1.0';
-        document.getElementById('metaSchemaLicense').textContent = meta.schema_license ? meta.schema_license.split(' ')[0] : 'CC-BY-4.0';
-        
-        let attrDisplay = meta.attribution || '© OSM contributors';
-        if (meta.schema_attribution) {
-          attrDisplay += ' | Schema © Overture Maps';
-        }
-        document.getElementById('metaAttribution').textContent = attrDisplay;
-        document.getElementById('metaCountryCode').textContent = meta.country_code ? `[${meta.country_code}]` : '';
-        metaCard.style.display = 'block';
-      } else {
-        metaCard.style.display = 'none';
-      }
+      metaRows.forEach(r => {
+        const k = typeof r.k === 'string' ? r.k : (r.k instanceof Uint8Array ? new TextDecoder().decode(r.k) : (r.k ? String(r.k) : ''));
+        const v = typeof r.v === 'string' ? r.v : (r.v instanceof Uint8Array ? new TextDecoder().decode(r.v) : (r.v ? String(r.v) : ''));
+        if (k) meta[k] = v;
+      });
     } catch (e) {
       console.warn('Could not read parquet_kv_metadata:', e);
-      document.getElementById('datasetMetaCard').style.display = 'none';
     }
+
+    // Format Exported / Created timestamps & dataset age
+    let exportDateStr = '';
+    let ageStr = '';
+    if (meta.exported_at) {
+      exportDateStr = meta.exported_at.replace('T', ' ').replace('Z', ' UTC');
+      ageStr = formatRelativeTime(meta.exported_at);
+    } else if (currentFile && currentFile.lastModified) {
+      exportDateStr = new Date(currentFile.lastModified).toISOString().replace('T', ' ').slice(0, 19) + ' UTC';
+      ageStr = formatRelativeTime(new Date(currentFile.lastModified).toISOString());
+    }
+
+    // Update Top Navigation Bar File Version Badge
+    const fileVerBadge = document.getElementById('fileVersionBadge');
+    const headerCompilerVer = document.getElementById('headerCompilerVer');
+    const headerExportedAt = document.getElementById('headerExportedAt');
+
+    if (meta.compiler_version || meta.exported_at || currentFile) {
+      const compilerName = meta.compiler ? (meta.compiler.split(' ')[0] || 'osm-pois') : 'osm-pois';
+      const compilerVerText = meta.compiler_version ? `${compilerName} ${meta.compiler_version}` : 'Places Parquet';
+      headerCompilerVer.textContent = compilerVerText;
+      headerExportedAt.textContent = exportDateStr ? (ageStr ? `${exportDateStr.slice(0, 10)} (${ageStr})` : exportDateStr.slice(0, 10)) : 'loaded';
+      fileVerBadge.style.display = 'inline-flex';
+    } else {
+      fileVerBadge.style.display = 'none';
+    }
+
+    // Update Left Sidebar Dataset Provenance Card
+    const metaCard = document.getElementById('datasetMetaCard');
+    document.getElementById('metaCompiler').textContent = meta.compiler || 'osm-pois';
+    document.getElementById('metaCompilerVersion').textContent = meta.compiler_version || (currentFile ? 'External Parquet' : 'N/A');
+    document.getElementById('metaExportedAt').textContent = exportDateStr || 'N/A';
+
+    const metaAgeRow = document.getElementById('metaAgeRow');
+    const metaAge = document.getElementById('metaAge');
+    if (ageStr) {
+      metaAge.textContent = ageStr;
+      metaAgeRow.style.display = 'flex';
+    } else {
+      metaAgeRow.style.display = 'none';
+    }
+
+    const metaFileSize = document.getElementById('metaFileSize');
+    if (currentFile && currentFile.size) {
+      metaFileSize.textContent = formatBytes(currentFile.size);
+      metaFileSize.style.display = 'inline-block';
+    } else {
+      metaFileSize.style.display = 'none';
+    }
+
+    const metaCountryCode = document.getElementById('metaCountryCode');
+    if (meta.country_code) {
+      metaCountryCode.textContent = `[${meta.country_code}]`;
+      metaCountryCode.style.display = 'inline-block';
+    } else {
+      metaCountryCode.style.display = 'none';
+    }
+
+    document.getElementById('metaSchema').textContent = meta.schema || 'Overture Places (theme=places / type=place)';
+    
+    const metaLicense = document.getElementById('metaLicense');
+    if (meta.license_url) {
+      metaLicense.innerHTML = `<a href="${meta.license_url}" target="_blank" style="color:#38bdf8;">${meta.license ? meta.license.split(' ')[0] : 'ODbL-1.0'} ↗</a>`;
+    } else {
+      metaLicense.textContent = meta.license ? meta.license.split(' ')[0] : 'ODbL-1.0';
+    }
+
+    const metaSchemaLicense = document.getElementById('metaSchemaLicense');
+    if (meta.schema_license_url) {
+      metaSchemaLicense.innerHTML = `<a href="${meta.schema_license_url}" target="_blank" style="color:#38bdf8;">${meta.schema_license ? meta.schema_license.split(' ')[0] : 'CC-BY-4.0'} ↗</a>`;
+    } else {
+      metaSchemaLicense.textContent = meta.schema_license ? meta.schema_license.split(' ')[0] : 'CC-BY-4.0';
+    }
+
+    let attrDisplay = meta.attribution || '© OpenStreetMap contributors';
+    if (meta.schema_attribution) {
+      attrDisplay += ' | Schema © Overture Maps';
+    }
+    document.getElementById('metaAttribution').textContent = attrDisplay;
+    metaCard.style.display = 'block';
 
     statusDot.className = 'status-dot active';
     statusText.textContent = `${currentParquetName} (${totalDatasetRows.toLocaleString()} POIs)`;
@@ -1028,24 +1277,68 @@
       if (catFilter) {
         filterClauses.push(`categories.primary = '${catFilter.replace(/'/g, "''")}'`);
       }
+
+      // Confidence / Quality Filter
+      const confFilter = document.getElementById('confidenceFilterSelect')?.value;
+      if (availableColumns.has('confidence') && confFilter) {
+        if (confFilter === 'low_only') {
+          filterClauses.push('TRY_CAST(confidence AS DOUBLE) < 0.40');
+        } else if (parseFloat(confFilter) > 0) {
+          filterClauses.push(`TRY_CAST(confidence AS DOUBLE) >= ${parseFloat(confFilter)}`);
+        }
+      }
+
+      // Operational Attribute Filter
+      const opFilter = document.getElementById('operationalFilterSelect')?.value;
+      if (opFilter === 'has_hours' && availableColumns.has('opening_hours')) {
+        filterClauses.push("opening_hours IS NOT NULL AND trim(opening_hours) != ''");
+      } else if (opFilter === 'has_wheelchair' && availableColumns.has('wheelchair')) {
+        filterClauses.push("wheelchair IS NOT NULL AND trim(wheelchair) != ''");
+      } else if (opFilter === 'has_cuisine' && availableColumns.has('cuisine')) {
+        filterClauses.push("cuisine IS NOT NULL AND trim(cuisine) != ''");
+      } else if (opFilter === 'has_brand' && availableColumns.has('brand')) {
+        filterClauses.push("brand.names.primary IS NOT NULL AND trim(brand.names.primary) != ''");
+      } else if (opFilter === 'has_contact') {
+        let contactParts = [];
+        if (availableColumns.has('websites')) contactParts.push('(websites IS NOT NULL AND len(websites) > 0)');
+        if (availableColumns.has('phones')) contactParts.push('(phones IS NOT NULL AND len(phones) > 0)');
+        if (availableColumns.has('emails')) contactParts.push('(emails IS NOT NULL AND len(emails) > 0)');
+        if (contactParts.length > 0) filterClauses.push(`(${contactParts.join(' OR ')})`);
+      }
+
       const extraWhere = filterClauses.length > 0 ? 'AND ' + filterClauses.join(' AND ') : '';
+
+      const selectCols = [
+        'id',
+        'names.primary AS name',
+        'categories.primary AS category',
+        'basic_category',
+        'operating_status',
+        'version',
+        'sources[1].update_time AS update_time',
+        'sources[1].dataset AS dataset',
+        'sources[1].license AS license',
+        '(bbox.xmin + bbox.xmax) / 2 AS lon',
+        '(bbox.ymin + bbox.ymax) / 2 AS lat',
+        'addresses[1].freeform AS address',
+        'websites[1] AS website',
+        'phones[1] AS phone',
+        availableColumns.has('emails') ? 'emails[1] AS email' : 'NULL AS email',
+        availableColumns.has('confidence') ? 'TRY_CAST(confidence AS DOUBLE) AS confidence' : 'NULL AS confidence',
+        availableColumns.has('opening_hours') ? 'opening_hours' : 'NULL AS opening_hours',
+        availableColumns.has('cuisine') ? 'cuisine' : 'NULL AS cuisine',
+        availableColumns.has('wheelchair') ? 'wheelchair' : 'NULL AS wheelchair',
+        availableColumns.has('payment_methods') ? 'payment_methods' : 'NULL AS payment_methods',
+        availableColumns.has('level') ? 'level' : 'NULL AS level',
+        availableColumns.has('operator') ? 'operator' : 'NULL AS operator',
+        availableColumns.has('delivery') ? 'delivery' : 'NULL AS delivery',
+        availableColumns.has('takeaway') ? 'takeaway' : 'NULL AS takeaway',
+        availableColumns.has('brand') ? 'brand.names.primary AS brand_name, brand.wikidata AS brand_wikidata' : 'NULL AS brand_name, NULL AS brand_wikidata'
+      ];
 
       const sql = `
         SELECT 
-          id,
-          names.primary AS name,
-          categories.primary AS category,
-          basic_category,
-          operating_status,
-          version,
-          sources[1].update_time AS update_time,
-          sources[1].dataset AS dataset,
-          sources[1].license AS license,
-          (bbox.xmin + bbox.xmax) / 2 AS lon,
-          (bbox.ymin + bbox.ymax) / 2 AS lat,
-          addresses[1].freeform AS address,
-          websites[1] AS website,
-          phones[1] AS phone
+          ${selectCols.join(',\n          ')}
         FROM '${currentParquetName}'
         WHERE (bbox.xmin + bbox.xmax) / 2 BETWEEN ${minLon} AND ${maxLon}
           AND (bbox.ymin + bbox.ymax) / 2 BETWEEN ${minLat} AND ${maxLat}
@@ -1103,8 +1396,20 @@
       });
 
       // Simple tooltip on hover
-      const displayName = poi.name ? poi.name : `<i>(Unnamed ${poi.category || 'POI'})</i>`;
-      marker.bindTooltip(`<b>${displayName}</b><br><span style="color:${color}">${poi.category || poi.basic_category || 'place'} (v${poi.version || '1'})</span>`, {
+      const displayName = poi.name ? escapeHtml(poi.name) : `<i>(Unnamed ${escapeHtml(poi.category || 'POI')})</i>`;
+      
+      let qualitySnippet = '';
+      if (poi.confidence != null) {
+        let confVal = Number(poi.confidence);
+        if (confVal > 1.0) confVal = confVal / 100.0;
+        confVal = Math.min(Math.max(confVal, 0.0), 1.0);
+        const confPct = Math.round(confVal * 100);
+        let confColor = confPct >= 85 ? '#10b981' : (confPct >= 70 ? '#14b8a6' : (confPct >= 55 ? '#38bdf8' : (confPct >= 40 ? '#f59e0b' : '#f43f5e')));
+        qualitySnippet = ` • <span style="color:${confColor}; font-weight:600;">⭐ ${confPct}%</span>`;
+      }
+      const hoursIcon = poi.opening_hours ? ' <span title="Has Opening Hours">🕒</span>' : '';
+
+      marker.bindTooltip(`<b>${displayName}</b>${hoursIcon}<br><span style="color:${color}">${escapeHtml(poi.category || poi.basic_category || 'place')} (v${poi.version || '1'})</span>${qualitySnippet}`, {
         direction: 'top',
         offset: [0, -radius]
       });
@@ -1128,21 +1433,196 @@
       osmUrl = `https://www.openstreetmap.org/${poi.id.replace('osm:', '')}`;
     }
 
+    // Confidence / POI Quality block
+    let confidenceHtml = '';
+    if (poi.confidence != null) {
+      let confNum = Number(poi.confidence);
+      // Handle unscaled Decimals (e.g. 99 instead of 0.99)
+      if (confNum > 1.0) {
+        confNum = confNum / 100.0;
+      }
+      confNum = Math.min(Math.max(confNum, 0.0), 1.0);
+      const confPct = Math.round(confNum * 100);
+      let confTier = '';
+      let confColor = '';
+      if (confNum >= 0.85) {
+        confTier = 'Top Quality (Surveyed & Verified)';
+        confColor = '#10b981';
+      } else if (confNum >= 0.70) {
+        confTier = 'High Quality (Well Mapped)';
+        confColor = '#14b8a6';
+      } else if (confNum >= 0.55) {
+        confTier = 'Standard Base Quality';
+        confColor = '#38bdf8';
+      } else if (confNum >= 0.40) {
+        confTier = 'Basic Quality (Sparse Tags)';
+        confColor = '#f59e0b';
+      } else {
+        confTier = 'Low Quality / Doubt / Stale';
+        confColor = '#f43f5e';
+      }
+
+      // Signal chips
+      let signalChips = [];
+      if (poi.opening_hours) signalChips.push('<span class="chip chip-green">✓ Hours</span>');
+      if (poi.website || poi.phone || poi.email) signalChips.push('<span class="chip chip-blue">✓ Contact</span>');
+      if (poi.address) signalChips.push('<span class="chip chip-blue">✓ Address</span>');
+      if (poi.wheelchair) signalChips.push('<span class="chip chip-purple">✓ Wheelchair</span>');
+      if (poi.brand_name) signalChips.push('<span class="chip chip-amber">✓ Brand</span>');
+      if (poi.version >= 3) signalChips.push(`<span class="chip chip-blue">✓ Mature (v${poi.version})</span>`);
+
+      confidenceHtml = `
+        <div style="background: rgba(15, 23, 42, 0.7); border: 1px solid #334155; border-radius: 6px; padding: 8px 10px; margin: 4px 0 6px 0;">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+            <span style="font-size: 0.75rem; color: #94a3b8; font-weight: 600;">POI Quality (Confidence):</span>
+            <span style="font-size: 0.82rem; font-weight: 700; color: ${confColor};">${confPct}% <span style="font-size: 0.7rem; color: #94a3b8;">(${confNum.toFixed(2)})</span></span>
+          </div>
+          <div class="quality-bar-bg">
+            <div class="quality-bar-fill" style="width: ${Math.min(Math.max(confPct, 5), 100)}%; background: ${confColor};"></div>
+          </div>
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 4px;">
+            <span style="font-size: 0.7rem; color: ${confColor}; font-weight: 600;">${confTier}</span>
+            <span style="font-size: 0.68rem; color: #64748b;">places.confidence</span>
+          </div>
+          ${signalChips.length > 0 ? `
+          <div style="display: flex; flex-wrap: wrap; gap: 3px; margin-top: 6px; padding-top: 4px; border-top: 1px solid rgba(51, 65, 85, 0.5);">
+            ${signalChips.join('')}
+          </div>` : ''}
+        </div>
+      `;
+    }
+
+    // Opening Hours Box
+    let hoursHtml = '';
+    if (poi.opening_hours && poi.opening_hours.trim() !== '') {
+      const is24_7 = poi.opening_hours.toLowerCase().includes('24/7');
+      hoursHtml = `
+        <div style="margin: 6px 0; padding: 8px; background: rgba(30, 41, 59, 0.6); border: 1px solid #334155; border-radius: 6px;">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+            <span style="font-size: 0.75rem; font-weight: 600; color: #94a3b8; display: flex; align-items: center; gap: 4px;">
+              🕒 Opening Hours:
+            </span>
+            ${is24_7 ? '<span class="chip chip-green">Open 24/7</span>' : ''}
+          </div>
+          <div class="hours-box">${escapeHtml(poi.opening_hours)}</div>
+        </div>
+      `;
+    }
+
+    // Operational attributes (Wheelchair, Payment, Cuisine, Level, Operator, Delivery, Takeaway)
+    let opRows = [];
+    if (poi.wheelchair && poi.wheelchair.trim() !== '') {
+      let wheelChip = '';
+      const w = poi.wheelchair.toLowerCase().trim();
+      if (w === 'yes') {
+        wheelChip = '<span class="chip chip-green">♿ Fully Accessible</span>';
+      } else if (w === 'limited') {
+        wheelChip = '<span class="chip chip-amber">♿ Limited Accessibility</span>';
+      } else if (w === 'no') {
+        wheelChip = '<span class="chip chip-red">♿ Not Accessible</span>';
+      } else if (w === 'designated') {
+        wheelChip = '<span class="chip chip-blue">♿ Designated</span>';
+      } else {
+        wheelChip = `<span class="chip">♿ ${escapeHtml(poi.wheelchair)}</span>`;
+      }
+      opRows.push(`
+        <div class="inspector-row">
+          <span class="inspector-key">Accessibility:</span>
+          <span class="inspector-val">${wheelChip}</span>
+        </div>
+      `);
+    }
+
+    if (poi.payment_methods) {
+      const pMethods = Array.isArray(poi.payment_methods) 
+        ? poi.payment_methods.filter(Boolean) 
+        : (typeof poi.payment_methods === 'string' && poi.payment_methods.trim() ? [poi.payment_methods] : []);
+      if (pMethods.length > 0) {
+        const pChips = pMethods.map(m => `<span class="chip chip-blue">💳 ${escapeHtml(m)}</span>`).join(' ');
+        opRows.push(`
+          <div class="inspector-row">
+            <span class="inspector-key">Payments:</span>
+            <span class="inspector-val" style="display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 3px;">${pChips}</span>
+          </div>
+        `);
+      }
+    }
+
+    if (poi.cuisine && poi.cuisine.trim() !== '') {
+      const cList = poi.cuisine.split(';').map(c => c.trim()).filter(Boolean);
+      const cChips = cList.map(c => `<span class="chip chip-amber">🍽️ ${escapeHtml(c)}</span>`).join(' ');
+      opRows.push(`
+        <div class="inspector-row">
+          <span class="inspector-key">Cuisine:</span>
+          <span class="inspector-val" style="display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 3px;">${cChips}</span>
+        </div>
+      `);
+    }
+
+    if (poi.level != null && String(poi.level).trim() !== '') {
+      opRows.push(`
+        <div class="inspector-row">
+          <span class="inspector-key">Floor / Level:</span>
+          <span class="inspector-val"><span class="chip">🏢 Level ${escapeHtml(poi.level)}</span></span>
+        </div>
+      `);
+    }
+
+    if (poi.operator && poi.operator.trim() !== '') {
+      opRows.push(`
+        <div class="inspector-row">
+          <span class="inspector-key">Operator:</span>
+          <span class="inspector-val" style="color: #cbd5e1;">${escapeHtml(poi.operator)}</span>
+        </div>
+      `);
+    }
+
+    if (poi.delivery || poi.takeaway) {
+      let services = [];
+      if (poi.delivery && poi.delivery !== 'no') services.push(`<span class="chip chip-green">🛵 Delivery: ${escapeHtml(poi.delivery)}</span>`);
+      if (poi.takeaway && poi.takeaway !== 'no') services.push(`<span class="chip chip-blue">🥡 Takeaway: ${escapeHtml(poi.takeaway)}</span>`);
+      if (services.length > 0) {
+        opRows.push(`
+          <div class="inspector-row">
+            <span class="inspector-key">Order Services:</span>
+            <span class="inspector-val" style="display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 3px;">${services.join(' ')}</span>
+          </div>
+        `);
+      }
+    }
+
+    // Brand row
+    let brandRow = '';
+    if (poi.brand_name && poi.brand_name.trim() !== '') {
+      let wdLink = '';
+      if (poi.brand_wikidata && poi.brand_wikidata.trim() !== '') {
+        wdLink = ` <a href="https://www.wikidata.org/wiki/${escapeHtml(poi.brand_wikidata)}" target="_blank" style="color:#38bdf8; font-size:0.7rem;" title="View brand on Wikidata">(${escapeHtml(poi.brand_wikidata)} ↗)</a>`;
+      }
+      brandRow = `
+        <div class="inspector-row">
+          <span class="inspector-key">Brand:</span>
+          <span class="inspector-val" style="color: #f1f5f9;">${escapeHtml(poi.brand_name)}${wdLink}</span>
+        </div>
+      `;
+    }
+
     inspector.innerHTML = `
       <div style="font-size: 0.95rem; font-weight: 700; color: #f8fafc; border-bottom: 1px solid #334155; padding-bottom: 4px;">
-        ${poi.name || '<span style="color:#94a3b8;">Unnamed POI</span>'}
+        ${poi.name ? escapeHtml(poi.name) : '<span style="color:#94a3b8; font-style:italic;">Unnamed POI</span>'}
       </div>
+      ${confidenceHtml}
       <div class="inspector-row">
         <span class="inspector-key">Category:</span>
-        <span class="inspector-val" style="color:${color};">${poi.category || 'N/A'}</span>
+        <span class="inspector-val" style="color:${color};">${escapeHtml(poi.category || 'N/A')}</span>
       </div>
       <div class="inspector-row">
         <span class="inspector-key">Basic Category:</span>
-        <span class="inspector-val">${poi.basic_category || 'N/A'}</span>
+        <span class="inspector-val">${escapeHtml(poi.basic_category || 'N/A')}</span>
       </div>
+      ${brandRow}
       <div class="inspector-row">
         <span class="inspector-key">Operating Status:</span>
-        <span class="inspector-val">${poi.operating_status || 'operational'}</span>
+        <span class="inspector-val">${escapeHtml(poi.operating_status || 'operational')}</span>
       </div>
       <div class="inspector-row">
         <span class="inspector-key">OSM Version:</span>
@@ -1155,11 +1635,13 @@
       </div>` : ''}
       <div class="inspector-row">
         <span class="inspector-key">Source &amp; License:</span>
-        <span class="inspector-val" style="font-size: 0.72rem;">${poi.dataset || 'OpenStreetMap'} (${poi.license || 'ODbL-1.0'})</span>
+        <span class="inspector-val" style="font-size: 0.72rem;">${escapeHtml(poi.dataset || 'OpenStreetMap')} (${escapeHtml(poi.license || 'ODbL-1.0')})</span>
       </div>
-      <div class="inspector-row">
+      ${hoursHtml}
+      ${opRows.join('')}
+      <div class="inspector-row" style="margin-top: 2px;">
         <span class="inspector-key">Address:</span>
-        <span class="inspector-val">${poi.address || 'N/A'}</span>
+        <span class="inspector-val">${escapeHtml(poi.address || 'N/A')}</span>
       </div>
       <div class="inspector-row">
         <span class="inspector-key">Coordinates:</span>
@@ -1168,12 +1650,17 @@
       ${poi.website ? `
       <div class="inspector-row">
         <span class="inspector-key">Website:</span>
-        <span class="inspector-val"><a href="${poi.website}" target="_blank" style="color:#38bdf8;">Link ↗</a></span>
+        <span class="inspector-val"><a href="${escapeHtml(poi.website)}" target="_blank" style="color:#38bdf8;">Link ↗</a></span>
       </div>` : ''}
       ${poi.phone ? `
       <div class="inspector-row">
         <span class="inspector-key">Phone:</span>
-        <span class="inspector-val">${poi.phone}</span>
+        <span class="inspector-val"><a href="tel:${escapeHtml(poi.phone)}" style="color:#38bdf8;">${escapeHtml(poi.phone)}</a></span>
+      </div>` : ''}
+      ${poi.email ? `
+      <div class="inspector-row">
+        <span class="inspector-key">Email:</span>
+        <span class="inspector-val"><a href="mailto:${escapeHtml(poi.email)}" style="color:#38bdf8;">${escapeHtml(poi.email)}</a></span>
       </div>` : ''}
       ${osmUrl ? `
       <div style="margin-top: 8px; padding-top: 6px; border-top: 1px solid #334155; display: flex; gap: 6px;">
@@ -1309,6 +1796,31 @@
   });
 
   document.getElementById('categoryFilterSelect').addEventListener('change', updatePOIs);
+  document.getElementById('confidenceFilterSelect')?.addEventListener('change', updatePOIs);
+  document.getElementById('operationalFilterSelect')?.addEventListener('change', updatePOIs);
+
+  // File Version Badge click: open sidebar and highlight dataset card
+  const fileVersionBadge = document.getElementById('fileVersionBadge');
+  if (fileVersionBadge) {
+    fileVersionBadge.addEventListener('click', () => {
+      const sidebar = document.getElementById('sidebar');
+      if (sidebar && sidebar.classList.contains('collapsed')) {
+        sidebar.classList.remove('collapsed');
+      }
+      const metaCard = document.getElementById('datasetMetaCard');
+      if (metaCard) {
+        metaCard.open = true;
+        metaCard.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        metaCard.style.transition = 'box-shadow 0.3s ease, border-color 0.3s ease';
+        metaCard.style.boxShadow = '0 0 16px rgba(56, 189, 248, 0.6)';
+        metaCard.style.borderColor = '#38bdf8';
+        setTimeout(() => {
+          metaCard.style.boxShadow = '';
+          metaCard.style.borderColor = '#334155';
+        }, 1500);
+      }
+    });
+  }
 
   // Blink Feature for Visual Gap Spotting
   document.getElementById('blinkBtn').addEventListener('click', () => {

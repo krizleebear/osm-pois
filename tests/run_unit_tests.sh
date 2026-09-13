@@ -48,3 +48,26 @@ if [ -f "$REPO_ROOT/azure-pipelines.yml" ]; then
     fi
     echo "=== [OK] Touchstone DE Pipeline Architecture Verified (Germany first, Matrix follows) ==="
 fi
+
+# Verify Web Viewer Contract Integrity
+if [ -f "$REPO_ROOT/viewer/index.html" ]; then
+    REQUIRED_VIEWER_TOKENS=(
+        "fileVersionBadge"
+        "datasetMetaCard"
+        "confidenceFilterSelect"
+        "operationalFilterSelect"
+        "opening_hours"
+        "wheelchair"
+        "payment_methods"
+        "cuisine"
+        "compiler_version"
+        "availableColumns"
+    )
+    for token in "${REQUIRED_VIEWER_TOKENS[@]}"; do
+        if ! grep -q "$token" "$REPO_ROOT/viewer/index.html"; then
+            echo "ERROR: viewer/index.html is missing required contract token: $token"
+            exit 1
+        fi
+    done
+    echo "=== [OK] Web Viewer Contract & Data Model Extensions Verified ==="
+fi
