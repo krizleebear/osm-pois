@@ -216,7 +216,11 @@ SELECT 8 AS id, '{"tourism":"information","information":"map","name":"Stadtplan"
 UNION ALL
 SELECT 9 AS id, '{"tourism":"information","information":"office","name":"Tourist Information"}'::JSON AS properties
 UNION ALL
-SELECT 10 AS id, '{"tourism":"information","name":"Office du Tourisme"}'::JSON AS properties;
+SELECT 10 AS id, '{"tourism":"information","name":"Office du Tourisme"}'::JSON AS properties
+UNION ALL
+SELECT 11 AS id, '{"amenity":"post_box"}'::JSON AS properties
+UNION ALL
+SELECT 12 AS id, '{"leisure":"playground","access":"yes"}'::JSON AS properties;
 
 CREATE TEMP TABLE mock_micro_filtered AS
 SELECT id, resolve_poi_name(properties) AS name
@@ -225,9 +229,10 @@ WHERE is_poi_candidate(properties);
 
 SELECT 
     CASE 
-        WHEN list_sort(list(id)) = [4, 5, 9, 10]
-        THEN '[OK] Micro-infrastructure filter passed: benches, waste baskets, and info boards/maps excluded, real POIs preserved'
-        ELSE error('MICRO-INFRASTRUCTURE FILTER FAILED: unexpected IDs retained!')
+        WHEN list_sort(list(id)) = [4, 5, 9, 10, 11, 12]
+             AND (SELECT count(*) FROM mock_micro_filtered WHERE id IN (11, 12) AND name IS NULL) = 2
+        THEN '[OK] Micro-infrastructure filter passed: benches and boards excluded, unnamed post boxes and playgrounds preserved with NULL name'
+        ELSE error('MICRO-INFRASTRUCTURE FILTER FAILED: unexpected IDs or names retained!')
     END AS micro_filter_check
 FROM mock_micro_filtered;
 

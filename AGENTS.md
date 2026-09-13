@@ -83,7 +83,7 @@ When modifying or generating code in this repository, you **MUST** follow these 
 9. **Micro-Infrastructure vs. POI Guardrail**:
    * Standalone street furniture and micro-infrastructure (`amenity IN ('bench', 'waste_basket', 'shelter', 'grit_bin', 'hunting_stand', 'feeding_place', 'waste_disposal', 'ticket_validator')`) as well as outdoor information micro-infrastructure (`tourism = 'information'` with `information IN ('board', 'guidepost', 'map', 'terminal', 'audioguide', 'tactile_map', 'tactile_model', 'route_marker', 'signpost')`) must **never** be extracted as standalone POIs, even if tagged with a `name` or `operator` (e.g. hiking clubs, transit operators, or municipal park authorities).
    * **Exception 1**: If the feature carries a real primary place tag (e.g. `shop`, `historic`, `office`, `craft`, `healthcare`), it is preserved.
-   * **Exception 2 (Post Boxes)**: `amenity=post_box` is explicitly preserved as a high-value drop-off POI, defaulting to name `'Post Box'` if neither `name`, `brand`, nor `operator` is provided.
+   * **Exception 2 (Post Boxes & Playgrounds — No Synthetic Pseudo-Names)**: High-value physical and recreation POIs (`amenity=post_box` and `leisure=playground`) are explicitly preserved as POI candidates even if untagged with a `name`, `brand`, or `operator`. They must NEVER receive synthetic pseudo-names (e.g. `'Post Box'` or `'Playground'`). If no name is tagged in OSM, `names.primary` must strictly be `NULL`, leaving naming policies to downstream consumers.
    * **Exception 3 (Tourist Info Offices / Visitor Centres)**: `tourism=information` is only categorized as `visitor_center` when explicitly tagged as an office or visitor centre (`information IN ('office', 'visitor_centre', 'visitor_center')`) or when the primary name indicates a tourist info office (e.g. 'Office du Tourisme', 'Tourist Information'). Standalone information boards and trail maps must never be classified as visitor centers.
 10. **Multilingual `names.common` & `brand.names.common` Extraction**:
     * Localized translations must be extracted dynamically into `MAP(VARCHAR, VARCHAR)` from all `name:<lang>` tags, plus `alt_name` and `int_name`.
@@ -194,6 +194,10 @@ To ensure consistent pipeline execution, reproducible releases, and clean Git wo
          - Confirm that no raw binary dumps (`*.pbf`, `*.parquet`) are tracked in git history.
       4. **Container Registry Public Visibility**:
          - Ensure base container images on GHCR (e.g. `ghcr.io/krizleebear/osm2parquet:vX.Y.Z`) have their package visibility configured to **Public**, allowing unauthenticated pulls by external contributors and CI runners.
+34. **DuckDB & Arrow Decimal / BLOB Serialization Invariant**:
+    - **DuckDB KV Metadata BLOB Keys**: In DuckDB, `parquet_kv_metadata()` returns `key` and `value` as `BLOB`. When consumed through DuckDB-Wasm or Arrow IPC in JavaScript, queries must explicitly cast `SELECT CAST(key AS VARCHAR) AS k, CAST(value AS VARCHAR) AS v` (with defensive `TextDecoder` decoding) to prevent JavaScript object keys from collapsing into `"[object Uint8Array]"`, which causes silent key collisions and missing metadata.
+    - **Confidence & Float Scaling (Decimal vs Double)**:
+      DuckDB `round(..., 2)` defaults to `DECIMAL(11,2)`. In Apache Arrow IPC, decimals are serialized as raw unscaled integers (e.g. `99` for `0.99`), producing a 100x magnification error (`9900%`) in JavaScript frontends. All normalized ratio and confidence macro outputs must explicitly cast to `::DOUBLE` matching Overture Places schema, and frontend consumers must defensively clamp and scale values (`confVal > 1.0 ? confVal / 100.0 : confVal`).
 
 ---
 

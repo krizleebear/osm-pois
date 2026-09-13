@@ -51,52 +51,55 @@ tourism = 'information' AND COALESCE(info IN ('board', 'guidepost', 'map', 'term
 
 -- Primary filter: determines whether an OSM feature qualifies as a POI candidate
 CREATE OR REPLACE MACRO is_poi_candidate(props) AS
-(
-    json_extract_string(props, '$.name') IS NOT NULL 
-    OR json_extract_string(props, '$.brand') IS NOT NULL 
-    OR json_extract_string(props, '$.operator') IS NOT NULL
-    OR json_extract_string(props, '$.amenity') = 'post_box'
-)
-AND (
-    json_extract_string(props, '$.amenity') IS NOT NULL 
-    OR json_extract_string(props, '$.shop') IS NOT NULL 
-    OR json_extract_string(props, '$.tourism') IS NOT NULL 
-    OR json_extract_string(props, '$.leisure') IS NOT NULL 
-    OR json_extract_string(props, '$.office') IS NOT NULL 
-    OR json_extract_string(props, '$.craft') IS NOT NULL 
-    OR json_extract_string(props, '$.healthcare') IS NOT NULL 
-    OR json_extract_string(props, '$.historic') IS NOT NULL 
-    OR json_extract_string(props, '$.railway') IS NOT NULL 
-    OR json_extract_string(props, '$.aeroway') IS NOT NULL
-)
-AND (
-    json_extract_string(props, '$.amenity') IS NULL 
-    OR NOT is_micro_infrastructure(json_extract_string(props, '$.amenity'))
-    OR json_extract_string(props, '$.shop') IS NOT NULL
-    OR (json_extract_string(props, '$.tourism') IS NOT NULL AND json_extract_string(props, '$.tourism') != 'information')
-    OR json_extract_string(props, '$.historic') IS NOT NULL
-    OR json_extract_string(props, '$.office') IS NOT NULL
-    OR json_extract_string(props, '$.craft') IS NOT NULL
-    OR json_extract_string(props, '$.healthcare') IS NOT NULL
-)
-AND (
-    NOT is_info_micro_infrastructure(json_extract_string(props, '$.tourism'), json_extract_string(props, '$.information'))
-    OR json_extract_string(props, '$.shop') IS NOT NULL
-    OR json_extract_string(props, '$.historic') IS NOT NULL
-    OR json_extract_string(props, '$.office') IS NOT NULL
-    OR json_extract_string(props, '$.craft') IS NOT NULL
-    OR json_extract_string(props, '$.healthcare') IS NOT NULL
-    OR (json_extract_string(props, '$.amenity') IS NOT NULL AND NOT is_micro_infrastructure(json_extract_string(props, '$.amenity')))
-    OR json_extract_string(props, '$.leisure') IS NOT NULL
+COALESCE(
+    (
+        json_extract_string(props, '$.name') IS NOT NULL 
+        OR json_extract_string(props, '$.brand') IS NOT NULL 
+        OR json_extract_string(props, '$.operator') IS NOT NULL
+        OR json_extract_string(props, '$.amenity') = 'post_box'
+        OR json_extract_string(props, '$.leisure') = 'playground'
+    )
+    AND (
+        json_extract_string(props, '$.amenity') IS NOT NULL 
+        OR json_extract_string(props, '$.shop') IS NOT NULL 
+        OR json_extract_string(props, '$.tourism') IS NOT NULL 
+        OR json_extract_string(props, '$.leisure') IS NOT NULL 
+        OR json_extract_string(props, '$.office') IS NOT NULL 
+        OR json_extract_string(props, '$.craft') IS NOT NULL 
+        OR json_extract_string(props, '$.healthcare') IS NOT NULL 
+        OR json_extract_string(props, '$.historic') IS NOT NULL 
+        OR json_extract_string(props, '$.railway') IS NOT NULL 
+        OR json_extract_string(props, '$.aeroway') IS NOT NULL
+    )
+    AND (
+        json_extract_string(props, '$.amenity') IS NULL 
+        OR NOT is_micro_infrastructure(json_extract_string(props, '$.amenity'))
+        OR json_extract_string(props, '$.shop') IS NOT NULL
+        OR (json_extract_string(props, '$.tourism') IS NOT NULL AND json_extract_string(props, '$.tourism') != 'information')
+        OR json_extract_string(props, '$.historic') IS NOT NULL
+        OR json_extract_string(props, '$.office') IS NOT NULL
+        OR json_extract_string(props, '$.craft') IS NOT NULL
+        OR json_extract_string(props, '$.healthcare') IS NOT NULL
+    )
+    AND (
+        NOT is_info_micro_infrastructure(json_extract_string(props, '$.tourism'), json_extract_string(props, '$.information'))
+        OR json_extract_string(props, '$.shop') IS NOT NULL
+        OR json_extract_string(props, '$.historic') IS NOT NULL
+        OR json_extract_string(props, '$.office') IS NOT NULL
+        OR json_extract_string(props, '$.craft') IS NOT NULL
+        OR json_extract_string(props, '$.healthcare') IS NOT NULL
+        OR (json_extract_string(props, '$.amenity') IS NOT NULL AND NOT is_micro_infrastructure(json_extract_string(props, '$.amenity')))
+        OR json_extract_string(props, '$.leisure') IS NOT NULL
+    ),
+    FALSE
 );
 
--- Resolve primary name of POI (with post_box fallback)
+-- Resolve primary name of POI (leaves untagged physical POIs like post_box and playground without pseudo-names)
 CREATE OR REPLACE MACRO resolve_poi_name(props) AS
 COALESCE(
     json_extract_string(props, '$.name'),
     json_extract_string(props, '$.brand'),
-    json_extract_string(props, '$.operator'),
-    CASE WHEN json_extract_string(props, '$.amenity') = 'post_box' THEN 'Post Box' ELSE NULL END
+    json_extract_string(props, '$.operator')
 );
 
 -- Format address array conforming to Overture Places schema

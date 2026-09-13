@@ -57,3 +57,18 @@ To prevent vertical crowding and ensure seamless inspection of rich Overture sch
 * **Invariant**:
   * Upon registering any Parquet file, the viewer must inspect available columns via `DESCRIBE SELECT * FROM '<filename>'` into an `availableColumns` Set.
   * Viewport queries must project optional attributes conditionally (`availableColumns.has('col') ? 'col' : 'NULL AS col'`), guaranteeing zero binder crashes across legacy, standard Overture, and modern superset GeoParquet files.
+
+### 4. Active Centering, Selection Layers & Cyclic Filter Navigation
+* **Complete POI Navigation**: Clicking a "Jump to Nearest Match" action must not merely display distance; it must:
+  1. Actively center the map (`map.setView([lat, lon], targetZoom)`) on the target POI.
+  2. Maintain a persistent visual selection highlight on a dedicated `selectionLayer` (pulsing ring + center dot + open Leaflet popup) that persists across viewport LOD redraws.
+  3. Automatically open the POI Details Inspector (`inspectorPanel`) and populate full attributes.
+  4. Provide a "🎯 Center" button within the inspector coordinates row for re-centering at any time.
+  5. Support sequential cyclic hopping through matching POIs via `id NOT IN (...)` tracking.
+* **Header Jump Hint**: If an active filter yields 0 POIs in the current viewport, the top navbar count badge switches to a clickable `POIs: 0 in view • 🎯 Jump` shortcut.
+
+### 5. Collapsible Provenance & Low-Footprint Sidebars
+* **Problem**: Sidebars easily become vertically overloaded with technical metadata, pushing essential interactive controls (categories, LOD sliders, basemap toggles) off-screen.
+* **Invariant**:
+  * Metadata and provenance cards in sidebars must default to collapsed (`<details>`) to conserve vertical space.
+  * Clicking the navbar version badge (`fileVersionBadge`) automatically opens the sidebar, sets `metaCard.open = true`, scrolls to the card, and pulses a highlight effect.
