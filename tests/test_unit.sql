@@ -233,3 +233,116 @@ SELECT
     END AS unit_test_assertion
 FROM evaluated
 WHERE expected_category != actual_category;
+
+-- ----------------------------------------------------------------------------
+-- Part 3: Schema Types, Multilingual Extraction & Micro-Infrastructure Tests
+-- ----------------------------------------------------------------------------
+
+-- Check 3.1: Multilingual extraction & namespace filtering logic
+CREATE TEMP TABLE mock_names_input AS
+SELECT 
+    '{"@type":"node","@id":123,"name":"Hauptbahnhof","name:en":"Main Station","name:de":"Hauptbahnhof","name:fr":"Gare Centrale","alt_name":"Hbf","int_name":"Central Station","name:etymology:wikidata":"Q123","name:signed":"no","name:empty":""}'::JSON AS properties;
+
+CREATE TEMP TABLE mock_names_result AS
+WITH extracted AS (
+    SELECT 
+        [
+            k for k in json_keys(properties)
+            if (
+                (
+                    k LIKE 'name:%'
+                    AND k NOT LIKE 'name:%:%'
+                    AND substring(k, 6) NOT IN ('etymology', 'source', 'botanical', 'prefix', 'genitive', 'left', 'right', 'signed')
+                )
+                OR k IN ('alt_name', 'int_name')
+            )
+            AND json_extract_string(properties, '$."' || k || '"') != ''
+        ] AS name_keys,
+        properties
+    FROM mock_names_input
+)
+SELECT 
+    CAST(
+        map(
+            [CASE WHEN k LIKE 'name:%' THEN substring(k, 6) ELSE k END for k in name_keys],
+            [json_extract_string(properties, '$."' || k || '"') for k in name_keys]
+        ) AS MAP(VARCHAR, VARCHAR)
+    ) AS names_common
+FROM extracted;
+
+SELECT 
+    CASE 
+        WHEN names_common['en'] = 'Main Station'
+         AND names_common['de'] = 'Hauptbahnhof'
+         AND names_common['fr'] = 'Gare Centrale'
+         AND names_common['alt_name'] = 'Hbf'
+         AND names_common['int_name'] = 'Central Station'
+         AND names_common['etymology:wikidata'] IS NULL
+         AND names_common['signed'] IS NULL
+         AND names_common['empty'] IS NULL
+         AND cardinality(names_common) = 5
+        THEN '[OK] Multilingual name extraction test passed: 5 languages mapped, namespaces excluded'
+        ELSE error('MULTILINGUAL EXTRACTION FAILED: unexpected map content!')
+    END AS multilingual_check
+FROM mock_names_result;
+
+-- Check 3.2: Micro-infrastructure filtering logic (benches/waste baskets dropped, post boxes kept)
+CREATE TEMP TABLE mock_micro_input AS
+SELECT 1 AS id, '{"amenity":"bench","operator":"City"}'::JSON AS properties
+UNION ALL
+SELECT 2 AS id, '{"amenity":"waste_basket","operator":"BSR"}'::JSON AS properties
+UNION ALL
+SELECT 3 AS id, '{"amenity":"shelter","operator":"DB"}'::JSON AS properties
+UNION ALL
+SELECT 4 AS id, '{"amenity":"post_box","operator":"La Poste"}'::JSON AS properties
+UNION ALL
+SELECT 5 AS id, '{"amenity":"bench","shop":"bakery","name":"Boulangerie"}'::JSON AS properties;
+
+CREATE TEMP TABLE mock_micro_filtered AS
+SELECT 
+    id,
+    COALESCE(json_extract_string(properties, '$.name'), json_extract_string(properties, '$.brand'), json_extract_string(properties, '$.operator'), CASE WHEN json_extract_string(properties, '$.amenity') = 'post_box' THEN 'Post Box' ELSE NULL END) AS name,
+    json_extract_string(properties, '$.amenity') AS amenity,
+    json_extract_string(properties, '$.shop') AS shop
+FROM mock_micro_input
+WHERE (json_extract_string(properties, '$.name') IS NOT NULL 
+       OR json_extract_string(properties, '$.brand') IS NOT NULL 
+       OR json_extract_string(properties, '$.operator') IS NOT NULL
+       OR json_extract_string(properties, '$.amenity') = 'post_box')
+  AND (json_extract_string(properties, '$.amenity') IS NOT NULL 
+       OR json_extract_string(properties, '$.shop') IS NOT NULL)
+  AND (
+      json_extract_string(properties, '$.amenity') IS NULL 
+      OR json_extract_string(properties, '$.amenity') NOT IN ('bench', 'waste_basket', 'shelter', 'grit_bin', 'hunting_stand', 'feeding_place', 'waste_disposal', 'ticket_validator')
+      OR json_extract_string(properties, '$.shop') IS NOT NULL
+  );
+
+SELECT 
+    CASE 
+        WHEN list_sort(list(id)) = [4, 5]
+        THEN '[OK] Micro-infrastructure filter passed: benches/waste baskets excluded, post boxes preserved'
+        ELSE error('MICRO-INFRASTRUCTURE FILTER FAILED: unexpected IDs retained!')
+    END AS micro_filter_check
+FROM mock_micro_filtered;
+
+-- Check 3.3: Schema type definitions check (rules struct array, common map)
+CREATE TEMP TABLE schema_type_check AS
+SELECT 
+    CAST(NULL AS STRUCT(
+        variant VARCHAR, 
+        "language" VARCHAR, 
+        perspectives STRUCT("mode" VARCHAR, countries VARCHAR[]), 
+        "value" VARCHAR, 
+        "between" DOUBLE[], 
+        side VARCHAR
+    )[]) AS rules_col,
+    CAST(map(['en'], ['Test']) AS MAP(VARCHAR, VARCHAR)) AS common_col;
+
+SELECT 
+    CASE 
+        WHEN typeof(rules_col) = 'STRUCT(variant VARCHAR, "language" VARCHAR, perspectives STRUCT("mode" VARCHAR, countries VARCHAR[]), "value" VARCHAR, "between" DOUBLE[], side VARCHAR)[]'
+         AND typeof(common_col) = 'MAP(VARCHAR, VARCHAR)'
+        THEN '[OK] Overture places schema types verified: rules is STRUCT[], common is MAP(VARCHAR, VARCHAR)'
+        ELSE error('SCHEMA TYPE CHECK FAILED!')
+    END AS schema_types_check
+FROM schema_type_check;

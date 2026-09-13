@@ -33,6 +33,59 @@ ORDER BY primary_key, primary_val, has_subtag ASC, overture_cat ASC;
 
 -- Extract Raw Features from Osmium GeoJSON stream (reconstructs 100% of points, ways, and polygons)
 CREATE TEMP TABLE raw_features AS
+WITH base_json AS (
+    SELECT 
+        geometry,
+        properties,
+        [
+            k for k in json_keys(properties)
+            if (
+                (
+                    k LIKE 'name:%'
+                    AND k NOT LIKE 'name:%:%'
+                    AND substring(k, 6) NOT IN ('etymology', 'source', 'botanical', 'prefix', 'genitive', 'left', 'right', 'signed')
+                )
+                OR k IN ('alt_name', 'int_name')
+            )
+            AND json_extract_string(properties, '$."' || k || '"') != ''
+        ] AS name_keys,
+        [
+            k for k in json_keys(properties)
+            if k LIKE 'brand:%'
+            AND k NOT LIKE 'brand:%:%'
+            AND substring(k, 7) NOT IN ('wikidata', 'wikipedia')
+            AND json_extract_string(properties, '$."' || k || '"') != ''
+        ] AS brand_keys
+    FROM read_json('__INPUT_JSONL__', 
+                   format='newline_delimited', 
+                   columns={'geometry': 'JSON', 'properties': 'JSON'})
+    WHERE (json_extract_string(properties, '$.name') IS NOT NULL 
+           OR json_extract_string(properties, '$.brand') IS NOT NULL 
+           OR json_extract_string(properties, '$.operator') IS NOT NULL
+           OR json_extract_string(properties, '$.amenity') = 'post_box')
+      AND (json_extract_string(properties, '$.amenity') IS NOT NULL 
+           OR json_extract_string(properties, '$.shop') IS NOT NULL 
+           OR json_extract_string(properties, '$.tourism') IS NOT NULL 
+           OR json_extract_string(properties, '$.leisure') IS NOT NULL 
+           OR json_extract_string(properties, '$.office') IS NOT NULL 
+           OR json_extract_string(properties, '$.craft') IS NOT NULL 
+           OR json_extract_string(properties, '$.healthcare') IS NOT NULL 
+           OR json_extract_string(properties, '$.historic') IS NOT NULL 
+           OR json_extract_string(properties, '$.railway') IS NOT NULL 
+           OR json_extract_string(properties, '$.aeroway') IS NOT NULL)
+      AND (
+          json_extract_string(properties, '$.amenity') IS NULL 
+          OR json_extract_string(properties, '$.amenity') NOT IN ('bench', 'waste_basket', 'shelter', 'grit_bin', 'hunting_stand', 'feeding_place', 'waste_disposal', 'ticket_validator')
+          OR json_extract_string(properties, '$.shop') IS NOT NULL
+          OR json_extract_string(properties, '$.tourism') IS NOT NULL
+          OR json_extract_string(properties, '$.historic') IS NOT NULL
+          OR json_extract_string(properties, '$.office') IS NOT NULL
+          OR json_extract_string(properties, '$.craft') IS NOT NULL
+          OR json_extract_string(properties, '$.healthcare') IS NOT NULL
+      )
+      AND geometry IS NOT NULL
+      AND ST_IsValid(ST_GeomFromGeoJSON(geometry))
+)
 SELECT 
     'osm:' || json_extract_string(properties, '$.@type') || '/' || json_extract_string(properties, '$.@id') AS id,
     TRY_CAST(json_extract_string(properties, '$.@version') AS INTEGER) AS osm_version,
@@ -41,9 +94,19 @@ SELECT
         THEN strftime(to_timestamp(TRY_CAST(json_extract_string(properties, '$.@timestamp') AS BIGINT)), '%Y-%m-%dT%H:%M:%SZ') 
         ELSE NULL 
     END AS osm_timestamp,
-    COALESCE(json_extract_string(properties, '$.name'), json_extract_string(properties, '$.brand'), json_extract_string(properties, '$.operator')) AS name,
-    json_extract_string(properties, '$.name:en') AS name_en,
-    json_extract_string(properties, '$.name:de') AS name_de,
+    COALESCE(json_extract_string(properties, '$.name'), json_extract_string(properties, '$.brand'), json_extract_string(properties, '$.operator'), CASE WHEN json_extract_string(properties, '$.amenity') = 'post_box' THEN 'Post Box' ELSE NULL END) AS name,
+    CAST(
+        map(
+            [CASE WHEN k LIKE 'name:%' THEN substring(k, 6) ELSE k END for k in name_keys],
+            [json_extract_string(properties, '$."' || k || '"') for k in name_keys]
+        ) AS MAP(VARCHAR, VARCHAR)
+    ) AS names_common,
+    CAST(
+        map(
+            [substring(k, 7) for k in brand_keys],
+            [json_extract_string(properties, '$."' || k || '"') for k in brand_keys]
+        ) AS MAP(VARCHAR, VARCHAR)
+    ) AS brand_common,
     json_extract_string(properties, '$.amenity') AS amenity,
     json_extract_string(properties, '$.religion') AS religion,
     json_extract_string(properties, '$.denomination') AS denomination,
@@ -74,24 +137,7 @@ SELECT
         THEN ST_PointOnSurface(ST_GeomFromGeoJSON(geometry)) 
         ELSE ST_GeomFromGeoJSON(geometry) 
     END AS geometry
-FROM read_json('__INPUT_JSONL__', 
-               format='newline_delimited', 
-               columns={'geometry': 'JSON', 'properties': 'JSON'})
-WHERE (json_extract_string(properties, '$.name') IS NOT NULL 
-       OR json_extract_string(properties, '$.brand') IS NOT NULL 
-       OR json_extract_string(properties, '$.operator') IS NOT NULL)
-  AND (json_extract_string(properties, '$.amenity') IS NOT NULL 
-       OR json_extract_string(properties, '$.shop') IS NOT NULL 
-       OR json_extract_string(properties, '$.tourism') IS NOT NULL 
-       OR json_extract_string(properties, '$.leisure') IS NOT NULL 
-       OR json_extract_string(properties, '$.office') IS NOT NULL 
-       OR json_extract_string(properties, '$.craft') IS NOT NULL 
-       OR json_extract_string(properties, '$.healthcare') IS NOT NULL 
-       OR json_extract_string(properties, '$.historic') IS NOT NULL 
-       OR json_extract_string(properties, '$.railway') IS NOT NULL 
-       OR json_extract_string(properties, '$.aeroway') IS NOT NULL)
-  AND geometry IS NOT NULL
-  AND ST_IsValid(ST_GeomFromGeoJSON(geometry));
+FROM base_json;
 
 -- Map Categories and Format into Overture Places GeoParquet
 COPY (
@@ -177,7 +223,21 @@ COPY (
         CAST([] AS VARCHAR[]) AS socials,
         CASE WHEN phone IS NOT NULL THEN [phone] ELSE CAST([] AS VARCHAR[]) END AS phones,
         -- Brand struct
-        {'wikidata': brand_wikidata, 'names': {'primary': brand, 'common': map([], []), 'rules': NULL}} AS brand,
+        {
+            'wikidata': brand_wikidata, 
+            'names': {
+                'primary': brand, 
+                'common': brand_common, 
+                'rules': CAST(NULL AS STRUCT(
+                    variant VARCHAR, 
+                    "language" VARCHAR, 
+                    perspectives STRUCT("mode" VARCHAR, countries VARCHAR[]), 
+                    "value" VARCHAR, 
+                    "between" DOUBLE[], 
+                    side VARCHAR
+                )[])
+            }
+        } AS brand,
         -- Addresses array
         CASE 
             WHEN addr_street IS NOT NULL OR addr_postcode IS NOT NULL OR addr_city IS NOT NULL 
@@ -193,11 +253,15 @@ COPY (
         -- Names struct
         {
             'primary': name,
-            'common': map(
-                CASE WHEN name_en IS NOT NULL THEN ['en'] ELSE [] END,
-                CASE WHEN name_en IS NOT NULL THEN [name_en] ELSE [] END
-            ),
-            'rules': NULL
+            'common': names_common,
+            'rules': CAST(NULL AS STRUCT(
+                variant VARCHAR, 
+                "language" VARCHAR, 
+                perspectives STRUCT("mode" VARCHAR, countries VARCHAR[]), 
+                "value" VARCHAR, 
+                "between" DOUBLE[], 
+                side VARCHAR
+            )[])
         } AS names,
         -- Sources array
         [{

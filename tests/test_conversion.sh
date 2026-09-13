@@ -95,6 +95,48 @@ if [ "$VALID_SOURCES" -ne "$TOTAL_COUNT" ]; then
     exit 1
 fi
 
+# Verify Schema Types, Multilingual Names & Micro-infrastructure filtering
+SCHEMA_CHECK=$(duckdb -dark-mode -no-stdin -noheader -csv -c "
+SELECT 
+    count(CASE WHEN typeof(names.rules) LIKE 'STRUCT%[]' THEN 1 END),
+    count(CASE WHEN typeof(brand.names.rules) LIKE 'STRUCT%[]' THEN 1 END),
+    count(CASE WHEN typeof(names.common) = 'MAP(VARCHAR, VARCHAR)' THEN 1 END),
+    count(CASE WHEN typeof(brand.names.common) = 'MAP(VARCHAR, VARCHAR)' THEN 1 END),
+    count(CASE WHEN cardinality(names.common) > 0 THEN 1 END),
+    count(CASE WHEN categories.primary IN ('bench', 'waste_basket', 'shelter', 'grit_bin', 'hunting_stand', 'feeding_place', 'waste_disposal', 'ticket_validator') THEN 1 END),
+    count(CASE WHEN categories.primary = 'post_box' THEN 1 END)
+FROM '$OUTPUT_PARQUET';
+")
+
+VALID_NAMES_RULES=$(echo "$SCHEMA_CHECK" | cut -d',' -f1)
+VALID_BRAND_RULES=$(echo "$SCHEMA_CHECK" | cut -d',' -f2)
+VALID_NAMES_COMMON=$(echo "$SCHEMA_CHECK" | cut -d',' -f3)
+VALID_BRAND_COMMON=$(echo "$SCHEMA_CHECK" | cut -d',' -f4)
+COMMON_NAMES_COUNT=$(echo "$SCHEMA_CHECK" | cut -d',' -f5)
+MICRO_COUNT=$(echo "$SCHEMA_CHECK" | cut -d',' -f6)
+POST_BOX_COUNT=$(echo "$SCHEMA_CHECK" | cut -d',' -f7)
+
+if [ "$VALID_NAMES_RULES" -ne "$TOTAL_COUNT" ] || [ "$VALID_BRAND_RULES" -ne "$TOTAL_COUNT" ]; then
+    echo "[FAIL] Expected rules columns to be typed as STRUCT[], got names.rules=$VALID_NAMES_RULES, brand.names.rules=$VALID_BRAND_RULES"
+    exit 1
+fi
+if [ "$VALID_NAMES_COMMON" -ne "$TOTAL_COUNT" ] || [ "$VALID_BRAND_COMMON" -ne "$TOTAL_COUNT" ]; then
+    echo "[FAIL] Expected common columns to be typed as MAP(VARCHAR, VARCHAR), got names.common=$VALID_NAMES_COMMON, brand.names.common=$VALID_BRAND_COMMON"
+    exit 1
+fi
+if [ "$COMMON_NAMES_COUNT" -lt 50 ]; then
+    echo "[FAIL] Expected at least 50 POIs with multilingual names.common, got $COMMON_NAMES_COUNT"
+    exit 1
+fi
+if [ "$MICRO_COUNT" -ne 0 ]; then
+    echo "[FAIL] Expected 0 micro-infrastructure POIs (benches/waste baskets/shelters), got $MICRO_COUNT"
+    exit 1
+fi
+if [ "$POST_BOX_COUNT" -lt 1 ]; then
+    echo "[FAIL] Expected post boxes to be retained, got $POST_BOX_COUNT"
+    exit 1
+fi
+
 # Verify Parquet File-Level KV_METADATA
 META_STATS=$(duckdb -dark-mode -no-stdin -noheader -csv -c "
 SELECT 
@@ -121,5 +163,5 @@ if [ "$HAS_ATTR" -ne 1 ] || [ "$HAS_LIC" -ne 1 ] || [ "$HAS_SRC" -ne 1 ] || [ "$
     exit 1
 fi
 
-echo "=== [OK] Integration Test Passed ($TOTAL_COUNT POIs generated, $WAY_COUNT ways, $WITH_ADDR with addresses, $VALID_SOURCES with OSM provenance/update_time, Parquet KV metadata verified) ==="
+echo "=== [OK] Integration Test Passed ($TOTAL_COUNT POIs generated, $WAY_COUNT ways, $WITH_ADDR with addresses, $COMMON_NAMES_COUNT multilingual names, $POST_BOX_COUNT post boxes, rules STRUCT[] & common MAP schema types verified, Parquet KV metadata verified) ==="
 rm -f "$OUTPUT_PARQUET"
