@@ -28,4 +28,4 @@ copies or substantial portions of the Software.
 
 ### Data Sources
 - **OpenStreetMap**: The target tags map to OpenStreetMap features (ODbL 1.0, © OpenStreetMap contributors).
-- **Overture Maps Foundation**: Taxonomy names and hierarchies follow the Overture Maps Places schema.
+- **Overture Maps Foundation**: Taxonomy names, categories, and hierarchical paths follow the Overture Maps Places schema ([docs.overturemaps.org/schema](https://docs.overturemaps.org/schema/)), licensed under [Creative Commons Attribution 4.0 International (CC-BY-4.0)](https://creativecommons.org/licenses/by/4.0/) (© Overture Maps Foundation).

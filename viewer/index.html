@@ -129,6 +129,18 @@
       pointer-events: none;
     }
 
+    /* Right-side Floating Panel (POI Details) */
+    .sidebar-right {
+      left: auto;
+      right: 16px;
+    }
+
+    .sidebar-right.collapsed {
+      transform: translateX(390px);
+      opacity: 0;
+      pointer-events: none;
+    }
+
     .sidebar-header {
       display: flex;
       align-items: center;
@@ -473,46 +485,54 @@
         📂 Load Parquet
         <input type="file" id="fileInput" accept=".parquet" style="display: none;">
       </label>
-      <button id="toggleSidebarBtn" class="btn btn-sm">Sidebar</button>
+      <button id="toggleSidebarBtn" class="btn btn-sm">Controls</button>
+      <button id="toggleInspectorBtn" class="btn btn-sm">POI Details</button>
     </div>
   </header>
 
   <!-- Map Canvas -->
   <div id="map"></div>
 
-  <!-- Sidebar -->
+  <!-- Left Sidebar: Controls & Dataset -->
   <aside id="sidebar" class="sidebar">
     <div class="sidebar-header">
-      <h2>Inspection & Controls</h2>
+      <h2>Controls &amp; Dataset</h2>
       <button id="closeSidebarBtn" class="btn btn-sm" style="padding: 2px 6px;">✕</button>
     </div>
 
     <div class="sidebar-body">
-      <!-- File Loading Section -->
+      <!-- 1 (User 3): Quick Extent Jumps -->
+      <div class="panel-section">
+        <div class="section-title">Quick Extent Jump</div>
+        <div class="quick-jumps">
+          <button class="btn btn-sm primary" id="fitDatasetBtn" disabled>Fit Dataset</button>
+          <button class="btn btn-sm" onclick="flyToBbox(13.37, 52.50, 13.43, 52.54)">Berlin Center</button>
+          <button class="btn btn-sm" onclick="flyToBbox(11.55, 48.12, 11.60, 48.16)">Munich</button>
+          <button class="btn btn-sm" onclick="flyToBbox(9.96, 53.53, 10.02, 53.57)">Hamburg</button>
+          <button class="btn btn-sm" onclick="flyToBbox(7.41, 43.72, 7.44, 43.75)">Monaco</button>
+        </div>
+      </div>
+
+      <!-- 2 (User 2): Filters -->
+      <div class="panel-section">
+        <div class="section-title">Filters</div>
+        <input type="text" id="nameFilterInput" placeholder="Filter by Name (e.g. Aldi, Cafe, Apotheke)...">
+        <select id="categoryFilterSelect" style="margin-top: 6px;">
+          <option value="">All Categories</option>
+        </select>
+      </div>
+
+      <!-- 3 (User 1): Active Dataset & Parquet Metadata -->
       <div class="panel-section">
         <div class="section-title">
-          <span>Active Dataset</span>
-          <span id="datasetSize" style="font-size: 0.7rem; color: #64748b;">No file</span>
-        </div>
-        
-        <div id="dropZone" class="drop-zone">
-          <div class="drop-zone-text">Drop <code>.places.parquet</code> anywhere</div>
-          <div class="drop-zone-sub">on this page or click to browse</div>
-        </div>
-
-        <div style="display: flex; gap: 6px; margin-top: 6px;">
-          <select id="presetSelect">
-            <option value="">-- Load Preset / Sample --</option>
-            <option value="MC_monaco.places.parquet">Monaco (MC_monaco.places.parquet)</option>
-            <option value="DE_germany.places.parquet">Germany (DE_germany.places.parquet)</option>
-          </select>
-          <button id="loadPresetBtn" class="btn btn-sm primary">Load</button>
+          <span>Active Dataset &amp; Metadata</span>
+          <span id="datasetSize" style="font-size: 0.72rem; color: #38bdf8; font-weight: 600;">No file loaded</span>
         </div>
 
         <!-- Dataset Provenance & Metadata Card -->
-        <div id="datasetMetaCard" class="inspector-card" style="display: none; margin-top: 8px;">
+        <div id="datasetMetaCard" class="inspector-card" style="display: none; margin-top: 2px;">
           <div style="font-weight: 700; color: #f8fafc; margin-bottom: 4px; border-bottom: 1px solid #334155; padding-bottom: 3px; display: flex; justify-content: space-between;">
-            <span>Dataset Provenance</span>
+            <span>Parquet Metadata</span>
             <span id="metaCountryCode" style="color: #38bdf8; font-weight: 600;"></span>
           </div>
           <div class="inspector-row">
@@ -528,29 +548,21 @@
             <span id="metaSchema" class="inspector-val">--</span>
           </div>
           <div class="inspector-row">
-            <span class="inspector-key">License:</span>
+            <span class="inspector-key">Data License:</span>
             <span id="metaLicense" class="inspector-val">ODbL-1.0</span>
           </div>
           <div class="inspector-row">
+            <span class="inspector-key">Schema Lic:</span>
+            <span id="metaSchemaLicense" class="inspector-val">CC-BY-4.0</span>
+          </div>
+          <div class="inspector-row">
             <span class="inspector-key">Attribution:</span>
-            <span id="metaAttribution" class="inspector-val">© OSM contributors</span>
+            <span id="metaAttribution" class="inspector-val">© OSM | Schema © Overture</span>
           </div>
         </div>
       </div>
 
-      <!-- Quick Extent Jumps -->
-      <div class="panel-section">
-        <div class="section-title">Quick Extent Jump</div>
-        <div class="quick-jumps">
-          <button class="btn btn-sm" onclick="flyToBbox(7.41, 43.72, 7.44, 43.75)">Monaco</button>
-          <button class="btn btn-sm" onclick="flyToBbox(13.37, 52.50, 13.43, 52.54)">Berlin Center</button>
-          <button class="btn btn-sm" onclick="flyToBbox(11.55, 48.12, 11.60, 48.16)">Munich</button>
-          <button class="btn btn-sm" onclick="flyToBbox(9.96, 53.53, 10.02, 53.57)">Hamburg</button>
-          <button class="btn btn-sm" id="fitDatasetBtn" disabled>Fit Dataset</button>
-        </div>
-      </div>
-
-      <!-- Gap Analysis & Basemap Controls -->
+      <!-- 4 (User 4): Gap Analysis & Basemap Controls -->
       <div class="panel-section">
         <div class="section-title">OSM Basemap & Gap Detection</div>
         <select id="basemapSelect">
@@ -583,7 +595,7 @@
         </div>
       </div>
 
-      <!-- Density & Zoom-Adaptive LOD -->
+      <!-- 5 (User 5): Density & Zoom-Adaptive LOD -->
       <div class="panel-section">
         <div class="section-title">Level of Detail (LOD) Rules</div>
         
@@ -604,30 +616,19 @@
           <input type="range" id="overviewLimitSlider" min="100" max="2000" step="100" value="500">
         </div>
       </div>
+    </div>
+  </aside>
 
-      <!-- Filter Controls -->
-      <div class="panel-section">
-        <div class="section-title">Filters</div>
-        <input type="text" id="nameFilterInput" placeholder="Filter by Name (e.g. Aldi, Cafe, Apotheke)...">
-        <select id="categoryFilterSelect" style="margin-top: 6px;">
-          <option value="">All Categories</option>
-        </select>
-      </div>
+  <!-- Right Sidebar: POI Details Inspector -->
+  <aside id="inspectorPanel" class="sidebar sidebar-right">
+    <div class="sidebar-header">
+      <h2>POI Details</h2>
+      <button id="closeInspectorBtn" class="btn btn-sm" style="padding: 2px 6px;">✕</button>
+    </div>
 
-      <!-- Legend -->
-      <div class="panel-section">
-        <div class="section-title">Category Legend</div>
-        <div id="legendGrid" class="legend-grid">
-          <!-- Populated by JS -->
-        </div>
-      </div>
-
-      <!-- Feature Inspector -->
-      <div class="panel-section" id="inspectorSection">
-        <div class="section-title">Selected POI Inspector</div>
-        <div id="inspectorContent" class="inspector-card" style="color: #64748b; text-align: center;">
-          Click any POI circle on the map to inspect its Overture schema fields.
-        </div>
+    <div class="sidebar-body">
+      <div id="inspectorContent" class="inspector-card" style="color: #64748b; text-align: center; padding: 24px 14px;">
+        Click any POI circle on the map to inspect its Overture schema fields.
       </div>
     </div>
   </aside>
@@ -727,29 +728,7 @@
     return CATEGORY_COLORS['default'];
   }
 
-  // Populate Legend
-  function buildLegend() {
-    const legendContainer = document.getElementById('legendGrid');
-    legendContainer.innerHTML = '';
-    const mainGroups = [
-      { name: 'Food & Drink', color: '#f97316' },
-      { name: 'Shopping / Retail', color: '#3b82f6' },
-      { name: 'Health & Medical', color: '#ef4444' },
-      { name: 'Accommodation', color: '#a855f7' },
-      { name: 'Arts & Culture', color: '#eab308' },
-      { name: 'Services & Banks', color: '#14b8a6' },
-      { name: 'Transportation', color: '#0284c7' },
-      { name: 'Civic & Worship', color: '#6366f1' },
-      { name: 'Other POIs', color: '#ec4899' }
-    ];
-    mainGroups.forEach(g => {
-      const item = document.createElement('div');
-      item.className = 'legend-item';
-      item.innerHTML = `<span class="legend-color" style="background:${g.color}"></span><span>${g.name}</span>`;
-      legendContainer.appendChild(item);
-    });
-  }
-  buildLegend();
+
 
   // Initialize Map
   const map = L.map('map', {
@@ -852,7 +831,12 @@
       console.error('Error reading parquet:', err);
       statusDot.className = 'status-dot warning';
       statusText.textContent = 'Read error: ' + err.message;
-      showBanner('Error reading parquet: ' + err.message, 5000);
+      const errStr = String(err && (err.message || err));
+      if (errStr.includes('magic bytes') || errStr.includes('No magic bytes found')) {
+        showBanner('Error reading parquet: File may be corrupted, truncated, or still being written (no magic bytes found).', 7000);
+      } else {
+        showBanner('Error reading parquet: ' + err.message, 5000);
+      }
     }
   }
 
@@ -954,8 +938,14 @@
         document.getElementById('metaCompilerVersion').textContent = meta.compiler_version || 'N/A';
         document.getElementById('metaExportedAt').textContent = meta.exported_at ? meta.exported_at.replace('T', ' ').replace('Z', ' UTC') : 'N/A';
         document.getElementById('metaSchema').textContent = meta.schema || 'Overture Places';
-        document.getElementById('metaLicense').textContent = meta.license || 'ODbL-1.0';
-        document.getElementById('metaAttribution').textContent = meta.attribution || '© OSM contributors';
+        document.getElementById('metaLicense').textContent = meta.license ? meta.license.split(' ')[0] : 'ODbL-1.0';
+        document.getElementById('metaSchemaLicense').textContent = meta.schema_license ? meta.schema_license.split(' ')[0] : 'CC-BY-4.0';
+        
+        let attrDisplay = meta.attribution || '© OSM contributors';
+        if (meta.schema_attribution) {
+          attrDisplay += ' | Schema © Overture Maps';
+        }
+        document.getElementById('metaAttribution').textContent = attrDisplay;
         document.getElementById('metaCountryCode').textContent = meta.country_code ? `[${meta.country_code}]` : '';
         metaCard.style.display = 'block';
       } else {
@@ -1071,6 +1061,19 @@
       poiCountBadge.textContent = `POIs: ${rows.length.toLocaleString()} (${elapsed}ms)`;
     } catch (err) {
       console.error('Viewport query error:', err);
+      const statusDot = document.getElementById('statusDot');
+      const statusText = document.getElementById('statusText');
+      const errStr = String(err && (err.message || err));
+
+      if (errStr.includes('magic bytes') || errStr.includes('No magic bytes found')) {
+        if (statusDot) statusDot.className = 'status-dot warning';
+        if (statusText) statusText.textContent = 'File replaced on disk (re-drop file)';
+        poiCountBadge.textContent = 'Error: Stale file handle';
+        showBanner(`⚠️ The file '${currentParquetName}' was modified or replaced on disk. Please drag and drop the file again into the viewer.`, 10000);
+      } else {
+        poiCountBadge.textContent = 'Query error';
+        showBanner(`Viewport query error: ${errStr.slice(0, 100)}`, 5000);
+      }
     } finally {
       isQueryInProgress = false;
     }
@@ -1183,8 +1186,11 @@
       </div>` : ''}
     `;
 
-    // Ensure sidebar is open to see the inspection
-    document.getElementById('sidebar').classList.remove('collapsed');
+    // Ensure right inspector panel is open to see the inspection
+    const inspectorPanel = document.getElementById('inspectorPanel');
+    if (inspectorPanel) {
+      inspectorPanel.classList.remove('collapsed');
+    }
   }
 
   // Show Temporary Notification Banner
@@ -1249,16 +1255,6 @@
     if (e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files.length > 0) {
       loadParquetFile(e.dataTransfer.files[0]);
     }
-  });
-
-  // Sidebar dropZone click-to-browse
-  const dropZone = document.getElementById('dropZone');
-  dropZone.addEventListener('click', () => document.getElementById('fileInput').click());
-
-  // Preset selector
-  document.getElementById('loadPresetBtn').addEventListener('click', () => {
-    const val = document.getElementById('presetSelect').value;
-    if (val) loadParquetURL(val, val);
   });
 
   // Fit Dataset Button
@@ -1336,13 +1332,22 @@
     }
   });
 
-  // Sidebar toggle
+  // Controls Sidebar toggle
   const sidebar = document.getElementById('sidebar');
   document.getElementById('toggleSidebarBtn').addEventListener('click', () => {
     sidebar.classList.toggle('collapsed');
   });
   document.getElementById('closeSidebarBtn').addEventListener('click', () => {
     sidebar.classList.add('collapsed');
+  });
+
+  // POI Details Inspector toggle
+  const inspectorPanel = document.getElementById('inspectorPanel');
+  document.getElementById('toggleInspectorBtn').addEventListener('click', () => {
+    inspectorPanel.classList.toggle('collapsed');
+  });
+  document.getElementById('closeInspectorBtn').addEventListener('click', () => {
+    inspectorPanel.classList.add('collapsed');
   });
 
   // File:// protocol detection notice (console only)

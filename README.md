@@ -70,6 +70,9 @@ FROM parquet_kv_metadata('MC_monaco.places.parquet');
 | `copyright` | `Data © OpenStreetMap contributors, licensed under Open Data Commons Open Database License 1.0 (ODbL)` |
 | `schema` | `Overture Maps theme=places / type=place` |
 | `schema_url` | `https://overturemaps.org/schema/` |
+| `schema_license` | `CC-BY-4.0 (https://creativecommons.org/licenses/by/4.0/)` |
+| `schema_license_url` | `https://creativecommons.org/licenses/by/4.0/` |
+| `schema_attribution` | `Schema specification © Overture Maps Foundation, licensed under Creative Commons Attribution 4.0 International (CC-BY-4.0)` |
 | `compiler` | `osm-pois (https://github.com/krizleebear/osm-pois)` |
 | `compiler_version`| Build number or git commit hash |
 | `country_code` | Two-letter ISO country code (e.g. `MC`, `DE`) |
@@ -116,6 +119,12 @@ The initial mapping tables (`mappings/overture_to_osm_categories.csv` and `mappi
 ### Code License (MIT)
 The pipeline code, configurations, and conversion scripts are licensed under the [MIT License](LICENSE.md) © 2025-2026 Christian Leberfinger.
 
-### Schema Specification
-The places schema and taxonomy concepts follow the open specifications of the [Overture Maps Foundation](https://overturemaps.org/).
+### Overture Maps Foundation Schema (CC-BY-4.0)
+The target schema (`theme=places / type=place`) and category taxonomy concepts follow the open specifications of the [Overture Maps Foundation](https://overturemaps.org/):
+- **Schema Specification**: [Overture Maps Schema](https://github.com/OvertureMaps/schema) ([docs.overturemaps.org/schema](https://docs.overturemaps.org/schema/))
+- **Schema License**: [Creative Commons Attribution 4.0 International (CC-BY-4.0)](https://creativecommons.org/licenses/by/4.0/)
+- **Attribution**: Schema specification © [Overture Maps Foundation](https://overturemaps.org/), licensed under [CC-BY-4.0](https://creativecommons.org/licenses/by/4.0/).
+
+> [!NOTE]
+> This pipeline compiles OpenStreetMap data into the Overture schema as a compatible drop-in target format. The underlying data remains OpenStreetMap (ODbL 1.0), while the schema specification itself is governed by CC-BY-4.0.
 

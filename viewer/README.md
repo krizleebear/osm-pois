@@ -66,6 +66,7 @@ To ensure the browser stays responsive even when inspecting massive datasets (li
 * Automatically reads file-level Key-Value metadata from Parquet footers via DuckDB-Wasm:
   * **Compiler Version**: Release build number or git commit hash
   * **Exported Date**: UTC timestamp when the parquet file was compiled
-  * **Schema**: Overture Places specification
-  * **License & Attribution**: ODbL-1.0 & © OpenStreetMap contributors
+  * **Schema**: Overture Places specification (`theme=places / type=place`)
+  * **Licenses**: OpenStreetMap data (`ODbL-1.0`) & Overture Schema (`CC-BY-4.0`)
+  * **Attribution**: © OpenStreetMap contributors & Schema © Overture Maps Foundation
   * **Country Code**: ISO country code badge (e.g. `[MC]`, `[DE]`)

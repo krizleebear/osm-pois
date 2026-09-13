@@ -60,7 +60,7 @@ When modifying or generating code in this repository, you **MUST** follow these 
 5. **Multi-Level ODbL License & Provenance Preservation**:
    * **Feature-Level Sources**: In the `sources` array of every generated GeoParquet record, `dataset: 'OpenStreetMap'` and `license: 'ODbL-1.0'` must always be preserved, along with `record_id` (e.g. `osm:node/12345`) and `update_time` (ISO 8601 timestamp).
    * **Feature-Level Versioning**: The top-level `version` column must accurately reflect the OSM feature `@version`.
-   * **Parquet File-Level KV_METADATA**: The `COPY ... TO ... (KV_METADATA { ... })` block in `scripts/export_pois.sql` must preserve all machine-readable provenance fields (`source`, `origin`, `dataset`, `attribution`, `attribution_url`, `license`, `license_url`, `copyright`, `schema`, `schema_url`, `compiler`, `compiler_version`, `country_code`, `exported_at`). Never strip or remove this metadata during refactoring.
+   * **Parquet File-Level KV_METADATA**: The `COPY ... TO ... (KV_METADATA { ... })` block in `scripts/export_pois.sql` must preserve all machine-readable provenance fields (`source`, `origin`, `dataset`, `attribution`, `attribution_url`, `license`, `license_url`, `copyright`, `schema`, `schema_url`, `schema_license`, `schema_license_url`, `schema_attribution`, `compiler`, `compiler_version`, `country_code`, `exported_at`). Never strip or remove this metadata during refactoring.
 6. **Preserve Granularity (No Lossy Over-Generalization)**:
    * Do not map distinct, specialized OSM concepts to broad, inaccurate parent buckets (e.g. `amenity=public_bookcase` MUST NOT be mapped to `library`, `waste_basket` or `bench` must not be force-mapped to unrelated commercial places).
    * It is strictly preferable to preserve the original OSM tag name (e.g. `categories.primary = 'public_bookcase'`) rather than artificially forcing it into an ill-fitting Overture bucket. Downstream systems cannot undo lossy generalizations.
@@ -146,11 +146,15 @@ To ensure consistent pipeline execution, reproducible releases, and clean Git wo
     - Use DuckDB with `httpfs` to query remote GitHub Release assets or S3 buckets directly (`duckdb -c "INSTALL httpfs; LOAD httpfs; SELECT ... FROM 'https://...'"`).
     - When reporting or investigating anomalies across upstream/downstream boundaries, provide reproducible SQL queries against the exact release dataset to eliminate ambiguity and immediately isolate root causes.
 31. **Machine-Readable Parquet Metadata & Multi-Tier Attribution Invariant**:
-    - Every exported GeoParquet asset must embed full provenance and legal attribution directly into its file footer via DuckDB `KV_METADATA` (`source`, `origin`, `dataset`, `attribution`, `attribution_url`, `license`, `license_url`, `copyright`, `schema`, `schema_url`, `compiler`, `compiler_version`, `country_code`, `exported_at`).
-    - Automated integration tests (`tests/test_conversion.sh`) assert the non-empty presence of `attribution`, `license`, `source`, `compiler`, and `country_code`.
-    - Downstream tools, UI viewers (e.g. `viewer/index.html`), release notes, and documentation must display clear OpenStreetMap attribution conforming to ODbL 1.0 Section 4.3:
-      > **"Data © OpenStreetMap contributors, available under the Open Database License (ODbL)."**
-      with hyperlinked text directly pointing to [https://www.openstreetmap.org/copyright](https://www.openstreetmap.org/copyright) and [https://opendatacommons.org/licenses/odbl/](https://opendatacommons.org/licenses/odbl/).
+    - Every exported GeoParquet asset must embed full provenance and legal attribution directly into its file footer via DuckDB `KV_METADATA` (`source`, `origin`, `dataset`, `attribution`, `attribution_url`, `license`, `license_url`, `copyright`, `schema`, `schema_url`, `schema_license`, `schema_license_url`, `schema_attribution`, `compiler`, `compiler_version`, `country_code`, `exported_at`).
+    - Automated integration tests (`tests/test_conversion.sh`) assert the non-empty presence of `attribution`, `license`, `source`, `compiler`, `country_code`, `schema_license`, and `schema_attribution`.
+    - Downstream tools, UI viewers (e.g. `viewer/index.html`), release notes, and documentation must display clear attribution:
+      1. OpenStreetMap data conforming to ODbL 1.0 Section 4.3:
+         > **"Data © OpenStreetMap contributors, available under the Open Database License (ODbL)."**
+         with hyperlinked text pointing to [https://www.openstreetmap.org/copyright](https://www.openstreetmap.org/copyright) and [https://opendatacommons.org/licenses/odbl/](https://opendatacommons.org/licenses/odbl/).
+      2. Overture Maps Foundation schema specification conforming to CC-BY-4.0 Section 3(a):
+         > **"Schema specification © Overture Maps Foundation, licensed under CC-BY-4.0."**
+         with hyperlinked text pointing to [https://overturemaps.org/schema/](https://overturemaps.org/schema/) and [https://creativecommons.org/licenses/by/4.0/](https://creativecommons.org/licenses/by/4.0/).
 
 ---
 
