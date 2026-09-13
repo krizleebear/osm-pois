@@ -48,25 +48,19 @@ To ensure the browser stays responsive even when inspecting massive datasets (li
 * **⚡ Blink Overlay**: Toggles the POI overlay on and off every 500ms to immediately highlight OSM icons on the basemap that lack a corresponding POI marker (gap spotted!).
 * **Opacity Sliders**: Fine-tune basemap and POI overlay transparency for side-by-side comparison.
 
-### 4. Interactive Feature Inspection, Versioning & OSM Link
-* Clicking on any POI circle marker inspects its Overture schema properties and provenance:
-  * `names.primary`
-  * `categories.primary` & `basic_category`
-  * **OSM Version**: Feature revision number (`v14`)
-  * **Last OSM Edit**: UTC timestamp of the last edit (`2023-10-24 17:35:37 UTC`)
-  * **Source & License**: `OpenStreetMap (ODbL-1.0)`
-  * `operating_status`
-  * `addresses` (freeform, postcode, locality)
-  * `websites`, `phones`
-  * **Direct Links**:
-    * Clickable link to OpenStreetMap object (`https://www.openstreetmap.org/node/...` or `way/...`) to view raw source tags.
-    * Clickable link to OpenStreetMap version history (`.../history`) to inspect past edits and changesets.
+### 4. Dual-Panel UI Architecture
+To prevent vertical crowding and ensure deep inspection of rich Overture schema fields:
+* **Left Panel (Controls & Dataset)**:
+  1. **Quick Extent Jump**: One-click bounds fitting (`Fit Dataset`) and shortcuts to major cities.
+  2. **Filters**: Real-time filtering by POI name or primary category (top 50 categories).
+  3. **Active Dataset & Provenance**: Live row count and Parquet KV metadata (compiler version, export timestamp, schema, ODbL license, attribution, and country code badge).
+  4. **OSM Basemap & Gap Detection**: Opacity controls and the `⚡ Blink Overlay` toggle.
+  5. **Level of Detail (LOD) Rules**: Configurable zoom thresholds and sample limits.
+* **Right Panel (POI Details Inspector)**:
+  * Dedicated floating panel that automatically opens when a POI circle marker is clicked.
+  * Shows full schema properties: name, primary/basic categories, operating status, OSM revision (`v14`), last edit timestamp, address, coordinates, phone, website, and direct links to the OSM object and its version history.
+  * Can be toggled independently via the `POI Details` button in the header.
 
-### 5. Dataset Metadata & Provenance Card
-* Automatically reads file-level Key-Value metadata from Parquet footers via DuckDB-Wasm:
-  * **Compiler Version**: Release build number or git commit hash
-  * **Exported Date**: UTC timestamp when the parquet file was compiled
-  * **Schema**: Overture Places specification (`theme=places / type=place`)
-  * **Licenses**: OpenStreetMap data (`ODbL-1.0`) & Overture Schema (`CC-BY-4.0`)
-  * **Attribution**: © OpenStreetMap contributors & Schema © Overture Maps Foundation
-  * **Country Code**: ISO country code badge (e.g. `[MC]`, `[DE]`)
+### 5. Stale File Handle & Recompilation Diagnostics
+* If a `.parquet` file is recompiled or replaced on disk while the viewer is active, the browser's cached file handle becomes invalid (`No magic bytes found`).
+* The viewer automatically detects this error condition and displays a clear on-screen banner prompting the user to re-drop the updated file or refresh the page (`F5`), preventing silent query failures.
