@@ -8,6 +8,7 @@ SET VARIABLE repo_root = '__REPO_ROOT__';
 .read __REPO_ROOT__/scripts/sql/01_taxonomy.sql
 .read __REPO_ROOT__/scripts/sql/02_macros.sql
 .read __REPO_ROOT__/scripts/sql/03_categorization.sql
+.read __REPO_ROOT__/scripts/sql/04_confidence.sql
 
 -- Extract Raw Features from Osmium GeoJSON stream (reconstructs 100% of points, ways, and polygons)
 CREATE TEMP TABLE raw_features AS
@@ -59,6 +60,26 @@ SELECT
     COALESCE(json_extract_string(properties, '$.website'), json_extract_string(properties, '$.contact:website')) AS website,
     COALESCE(json_extract_string(properties, '$.phone'), json_extract_string(properties, '$.contact:phone')) AS phone,
     COALESCE(json_extract_string(properties, '$.email'), json_extract_string(properties, '$.contact:email')) AS email,
+    -- Extended operational attributes (Superset extension)
+    json_extract_string(properties, '$.opening_hours') AS opening_hours,
+    json_extract_string(properties, '$.wheelchair') AS wheelchair,
+    extract_payment_methods(properties) AS payment_methods,
+    extract_poi_level(properties) AS level,
+    json_extract_string(properties, '$.delivery') AS delivery,
+    json_extract_string(properties, '$.takeaway') AS takeaway,
+    -- Upstream POI confidence scoring
+    calculate_poi_confidence(
+        properties,
+        ST_GeometryType(ST_GeomFromGeoJSON(geometry)) IN ('POLYGON', 'MULTIPOLYGON'),
+        TRY_CAST(json_extract_string(properties, '$.@version') AS INTEGER),
+        CASE 
+            WHEN json_extract_string(properties, '$.@timestamp') IS NOT NULL 
+            THEN strftime(to_timestamp(TRY_CAST(json_extract_string(properties, '$.@timestamp') AS BIGINT)), '%Y-%m-%dT%H:%M:%SZ') 
+            ELSE NULL 
+        END,
+        COALESCE(json_extract_string(properties, '$.website'), json_extract_string(properties, '$.contact:website')) IS NOT NULL,
+        COALESCE(json_extract_string(properties, '$.phone'), json_extract_string(properties, '$.contact:phone')) IS NOT NULL
+    ) AS confidence,
     CASE 
         WHEN ST_GeometryType(ST_GeomFromGeoJSON(geometry)) IN ('POLYGON', 'MULTIPOLYGON') 
         THEN ST_PointOnSurface(ST_GeomFromGeoJSON(geometry)) 
@@ -84,7 +105,7 @@ COPY (
         geometry,
         -- Categories struct
         {'primary': main_category, 'alternate': CAST([] AS VARCHAR[])} AS categories,
-        0.8::DOUBLE AS confidence,
+        confidence,
         -- Contact arrays
         CASE WHEN website IS NOT NULL THEN [website] ELSE CAST([] AS VARCHAR[]) END AS websites,
         CASE WHEN email IS NOT NULL THEN [email] ELSE CAST([] AS VARCHAR[]) END AS emails,
@@ -128,7 +149,16 @@ COPY (
         } AS bbox,
         'places.parquet' AS filename,
         'places' AS theme,
-        'place' AS type
+        'place' AS type,
+        -- Extended Operational Attributes (Non-breaking Superset Extension)
+        opening_hours,
+        cuisine,
+        wheelchair,
+        payment_methods,
+        level,
+        operator,
+        delivery,
+        takeaway
     FROM categorized c
     LEFT JOIN overture_taxonomy t ON c.main_category = t.overture_cat
 ) TO '__OUTPUT_PARQUET__' (

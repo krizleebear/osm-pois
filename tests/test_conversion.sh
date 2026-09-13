@@ -95,7 +95,7 @@ if [ "$VALID_SOURCES" -ne "$TOTAL_COUNT" ]; then
     exit 1
 fi
 
-# Verify Schema Types, Multilingual Names & Micro-infrastructure filtering
+# Verify Schema Types, Multilingual Names, Micro-infrastructure filtering, Confidence & Superset Attributes
 SCHEMA_CHECK=$(duckdb -dark-mode -no-stdin -noheader -csv -c "
 SELECT 
     count(CASE WHEN typeof(names.rules) LIKE 'STRUCT%[]' THEN 1 END),
@@ -105,7 +105,17 @@ SELECT
     count(CASE WHEN cardinality(names.common) > 0 THEN 1 END),
     count(CASE WHEN categories.primary IN ('bench', 'waste_basket', 'shelter', 'grit_bin', 'hunting_stand', 'feeding_place', 'waste_disposal', 'ticket_validator', 'board', 'guidepost') THEN 1 END),
     count(CASE WHEN categories.primary = 'post_box' THEN 1 END),
-    count(CASE WHEN categories.primary = 'visitor_center' THEN 1 END)
+    count(CASE WHEN categories.primary = 'visitor_center' THEN 1 END),
+    count(DISTINCT confidence),
+    count(CASE WHEN confidence BETWEEN 0.10 AND 0.99 THEN 1 END),
+    count(CASE WHEN typeof(opening_hours) = 'VARCHAR' THEN 1 END),
+    count(CASE WHEN typeof(wheelchair) = 'VARCHAR' THEN 1 END),
+    count(CASE WHEN typeof(payment_methods) = 'VARCHAR[]' THEN 1 END),
+    count(CASE WHEN typeof(level) = 'VARCHAR' THEN 1 END),
+    count(CASE WHEN typeof(delivery) = 'VARCHAR' THEN 1 END),
+    count(CASE WHEN typeof(takeaway) = 'VARCHAR' THEN 1 END),
+    count(CASE WHEN opening_hours IS NOT NULL THEN 1 END),
+    count(CASE WHEN len(payment_methods) > 0 THEN 1 END)
 FROM '$OUTPUT_PARQUET';
 ")
 
@@ -117,6 +127,16 @@ COMMON_NAMES_COUNT=$(echo "$SCHEMA_CHECK" | cut -d',' -f5)
 MICRO_COUNT=$(echo "$SCHEMA_CHECK" | cut -d',' -f6)
 POST_BOX_COUNT=$(echo "$SCHEMA_CHECK" | cut -d',' -f7)
 VISITOR_CENTER_COUNT=$(echo "$SCHEMA_CHECK" | cut -d',' -f8)
+DISTINCT_CONF_COUNT=$(echo "$SCHEMA_CHECK" | cut -d',' -f9)
+VALID_CONF_COUNT=$(echo "$SCHEMA_CHECK" | cut -d',' -f10)
+VALID_HOURS_TYPE=$(echo "$SCHEMA_CHECK" | cut -d',' -f11)
+VALID_WHEEL_TYPE=$(echo "$SCHEMA_CHECK" | cut -d',' -f12)
+VALID_PAY_TYPE=$(echo "$SCHEMA_CHECK" | cut -d',' -f13)
+VALID_LEVEL_TYPE=$(echo "$SCHEMA_CHECK" | cut -d',' -f14)
+VALID_DELIV_TYPE=$(echo "$SCHEMA_CHECK" | cut -d',' -f15)
+VALID_TAKE_TYPE=$(echo "$SCHEMA_CHECK" | cut -d',' -f16)
+WITH_HOURS_COUNT=$(echo "$SCHEMA_CHECK" | cut -d',' -f17)
+WITH_PAY_COUNT=$(echo "$SCHEMA_CHECK" | cut -d',' -f18)
 
 if [ "$VALID_NAMES_RULES" -ne "$TOTAL_COUNT" ] || [ "$VALID_BRAND_RULES" -ne "$TOTAL_COUNT" ]; then
     echo "[FAIL] Expected rules columns to be typed as STRUCT[], got names.rules=$VALID_NAMES_RULES, brand.names.rules=$VALID_BRAND_RULES"
@@ -140,6 +160,30 @@ if [ "$POST_BOX_COUNT" -lt 1 ]; then
 fi
 if [ "$VISITOR_CENTER_COUNT" -gt 10 ] || [ "$VISITOR_CENTER_COUNT" -lt 1 ]; then
     echo "[FAIL] Expected between 1 and 10 real visitor centers in Monaco, got $VISITOR_CENTER_COUNT"
+    exit 1
+fi
+
+# Confidence Scoring Assertions
+if [ "$VALID_CONF_COUNT" -ne "$TOTAL_COUNT" ]; then
+    echo "[FAIL] Expected all POIs to have confidence in [0.10, 0.99], got $VALID_CONF_COUNT / $TOTAL_COUNT"
+    exit 1
+fi
+if [ "$DISTINCT_CONF_COUNT" -lt 10 ]; then
+    echo "[FAIL] Expected dynamic confidence scoring (> 10 distinct values), got $DISTINCT_CONF_COUNT"
+    exit 1
+fi
+
+# Superset Operational Attributes Schema Assertions
+if [ "$VALID_HOURS_TYPE" -ne "$TOTAL_COUNT" ] || [ "$VALID_WHEEL_TYPE" -ne "$TOTAL_COUNT" ] || [ "$VALID_PAY_TYPE" -ne "$TOTAL_COUNT" ] || [ "$VALID_LEVEL_TYPE" -ne "$TOTAL_COUNT" ] || [ "$VALID_DELIV_TYPE" -ne "$TOTAL_COUNT" ] || [ "$VALID_TAKE_TYPE" -ne "$TOTAL_COUNT" ]; then
+    echo "[FAIL] Superset attribute type verification failed (hours=$VALID_HOURS_TYPE, wheel=$VALID_WHEEL_TYPE, pay=$VALID_PAY_TYPE, level=$VALID_LEVEL_TYPE, deliv=$VALID_DELIV_TYPE, take=$VALID_TAKE_TYPE)"
+    exit 1
+fi
+if [ "$WITH_HOURS_COUNT" -lt 50 ]; then
+    echo "[FAIL] Expected at least 50 POIs with opening_hours in Monaco, got $WITH_HOURS_COUNT"
+    exit 1
+fi
+if [ "$WITH_PAY_COUNT" -lt 1 ]; then
+    echo "[FAIL] Expected at least 1 POI with payment_methods in Monaco, got $WITH_PAY_COUNT"
     exit 1
 fi
 

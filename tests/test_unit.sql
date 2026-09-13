@@ -10,6 +10,7 @@
 .read scripts/sql/01_taxonomy.sql
 .read scripts/sql/02_macros.sql
 .read scripts/sql/03_categorization.sql
+.read scripts/sql/04_confidence.sql
 
 -- ----------------------------------------------------------------------------
 -- Part 1: Taxonomy & Mapping Integrity Checks
@@ -244,3 +245,107 @@ SELECT
         ELSE error('SCHEMA TYPE CHECK FAILED!')
     END AS schema_types_check
 FROM schema_type_check;
+
+-- ----------------------------------------------------------------------------
+-- Part 4: POI Confidence Scoring & Operational Tag Extractions
+-- ----------------------------------------------------------------------------
+
+-- Check 4.1: Dynamic Payment Methods Extraction & Sorting
+CREATE TEMP TABLE mock_payment_test AS
+SELECT extract_payment_methods('{"payment:cash":"yes","payment:credit_cards":"yes","payment:apple_pay":"only","payment:bitcoin":"no","payment:notes":"yes"}'::JSON) AS payment_methods;
+
+SELECT 
+    CASE 
+        WHEN payment_methods = ['apple_pay', 'cash', 'credit_cards', 'notes']
+        THEN '[OK] Payment methods extraction passed: filtered yes/only and sorted alphabetically'
+        ELSE error('PAYMENT METHODS EXTRACTION FAILED: unexpected array ' || CAST(payment_methods AS VARCHAR))
+    END AS payment_methods_check
+FROM mock_payment_test;
+
+-- Check 4.2: POI Confidence Scoring Calibration Test Cases
+CREATE TEMP TABLE confidence_test_cases (
+    test_id VARCHAR,
+    expected_score DECIMAL(11,2),
+    props JSON,
+    is_polygon BOOLEAN,
+    osm_version INTEGER,
+    osm_timestamp VARCHAR,
+    has_website BOOLEAN,
+    has_phone BOOLEAN,
+    ref_year INTEGER
+);
+
+INSERT INTO confidence_test_cases VALUES
+    -- Base Minimal node: 0.60 - 0.08 (minimal penalty) = 0.52
+    ('CONF-01-Minimal', 0.52, '{"name":"Minimal POI","amenity":"restaurant"}'::JSON, false, 1, '2026-01-01T00:00:00Z', false, false, 2026),
+    
+    -- Standard Venue with Website (contact bonus +0.08): 0.60 + 0.08 = 0.68
+    ('CONF-02-WithContact', 0.68, '{"name":"Standard Venue","amenity":"restaurant","website":"https://example.com"}'::JSON, false, 1, '2026-01-01T00:00:00Z', true, false, 2026),
+    
+    -- Fresh Survey (+0.15 survey + 0.08 contact): 0.60 + 0.15 + 0.08 = 0.83
+    ('CONF-03-FreshSurvey', 0.83, '{"name":"Surveyed Place","amenity":"restaurant","check_date":"2025-06-15"}'::JSON, false, 1, '2026-01-01T00:00:00Z', true, false, 2026),
+    
+    -- Older Survey (+0.08 older survey + 0.08 contact): 0.60 + 0.08 + 0.08 = 0.76
+    ('CONF-04-OlderSurvey', 0.76, '{"name":"Older Survey Place","amenity":"restaurant","survey:date":"2022-03-10"}'::JSON, false, 1, '2026-01-01T00:00:00Z', true, false, 2026),
+    
+    -- Opening Hours (+0.10 hours + 0.08 contact): 0.60 + 0.10 + 0.08 = 0.78
+    ('CONF-05-OpeningHours', 0.78, '{"name":"Cafe","amenity":"cafe","opening_hours":"Mo-Fr 08:00-18:00"}'::JSON, false, 1, '2026-01-01T00:00:00Z', true, false, 2026),
+    
+    -- Entity Wikidata (+0.06 wiki + 0.08 contact): 0.60 + 0.06 + 0.08 = 0.74
+    ('CONF-06-Wikidata', 0.74, '{"name":"Museum","tourism":"museum","wikidata":"Q12345"}'::JSON, false, 1, '2026-01-01T00:00:00Z', true, false, 2026),
+    
+    -- Tag Richness (+0.05 richness + 0.08 contact): 0.60 + 0.05 + 0.08 = 0.73
+    ('CONF-07-TagRichness', 0.73, '{"name":"Bistro","amenity":"restaurant","wheelchair":"yes","cuisine":"french"}'::JSON, false, 1, '2026-01-01T00:00:00Z', true, false, 2026),
+    
+    -- Building Anchor (+0.05 building + 0.08 contact): 0.60 + 0.05 + 0.08 = 0.73
+    ('CONF-08-BuildingAnchor', 0.73, '{"name":"Store","shop":"supermarket"}'::JSON, true, 1, '2026-01-01T00:00:00Z', true, false, 2026),
+    
+    -- Mature Revision (+0.03 version + 0.08 contact): 0.60 + 0.03 + 0.08 = 0.71
+    ('CONF-09-MatureRevision', 0.71, '{"name":"Shop","shop":"clothes"}'::JSON, false, 4, '2026-01-01T00:00:00Z', true, false, 2026),
+    
+    -- Top-Tier Venue (all bonuses sum to 0.52, capped at +0.39): 0.60 + 0.39 = 0.99
+    ('CONF-10-TopTierMax', 0.99, '{"name":"Grand Hotel","tourism":"hotel","check_date":"2025-05-01","opening_hours":"24/7","wikidata":"Q999","wheelchair":"yes","cuisine":"fine_dining","building":"hotel"}'::JSON, true, 5, '2025-05-01T12:00:00Z', true, true, 2026),
+    
+    -- Closure Note (-0.35 note - 0.08 minimal): 0.60 - 0.35 - 0.08 = 0.17
+    ('CONF-11-ClosureNote', 0.17, '{"name":"Old Bar","amenity":"bar","note":"dauerhaft geschlossen"}'::JSON, false, 1, '2026-01-01T00:00:00Z', false, false, 2026),
+    
+    -- Lifecycle Disused (-0.40 disused - 0.08 minimal): 0.60 - 0.40 - 0.08 = 0.12
+    ('CONF-12-LifecycleDisused', 0.12, '{"name":"Disused Bank","amenity":"bank","disused":"yes"}'::JSON, false, 1, '2026-01-01T00:00:00Z', false, false, 2026),
+    
+    -- Stale Record (> 8 years without contacts: -0.15 stale - 0.08 minimal): 0.60 - 0.15 - 0.08 = 0.37
+    ('CONF-13-StaleRecord', 0.37, '{"name":"Stale Shop","shop":"books"}'::JSON, false, 1, '2015-05-01T00:00:00Z', false, false, 2026),
+    
+    -- Clamped Minimum (0.60 - 0.35 - 0.40 = -0.15 -> clamp to 0.10)
+    ('CONF-14-ClampedMin', 0.10, '{"name":"Demolished Pub","amenity":"pub","disused:amenity":"pub","note":"abgerissen"}'::JSON, false, 1, '2026-01-01T00:00:00Z', false, false, 2026);
+
+CREATE TEMP TABLE evaluated_confidence AS
+SELECT 
+    t.test_id,
+    t.expected_score,
+    calculate_poi_confidence(
+        t.props,
+        t.is_polygon,
+        t.osm_version,
+        t.osm_timestamp,
+        t.has_website,
+        t.has_phone,
+        t.ref_year
+    ) AS actual_score
+FROM confidence_test_cases t;
+
+SELECT 
+    test_id,
+    expected_score,
+    actual_score,
+    CASE WHEN expected_score = actual_score THEN 'PASS' ELSE 'FAIL' END AS status
+FROM evaluated_confidence
+ORDER BY test_id;
+
+SELECT 
+    CASE 
+        WHEN count(*) > 0 THEN error('CONFIDENCE UNIT TEST FAILED: ' || count(*) || ' test cases did not match expected scores!')
+        ELSE '[OK] All ' || (SELECT count(*) FROM evaluated_confidence) || ' confidence scoring unit tests passed successfully!'
+    END AS confidence_unit_test_assertion
+FROM evaluated_confidence
+WHERE expected_score != actual_score;
+
