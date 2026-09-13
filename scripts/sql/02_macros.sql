@@ -49,15 +49,31 @@ amenity IN ('bench', 'waste_basket', 'shelter', 'grit_bin', 'hunting_stand', 'fe
 CREATE OR REPLACE MACRO is_info_micro_infrastructure(tourism, info) AS
 tourism = 'information' AND COALESCE(info IN ('board', 'guidepost', 'map', 'terminal', 'audioguide', 'tactile_map', 'tactile_model', 'route_marker', 'signpost'), FALSE);
 
+-- Identify micro-technical man_made tags (cameras, manholes, survey markers, flagpoles, etc.) that should not be standalone POIs
+CREATE OR REPLACE MACRO is_micro_man_made(man_made) AS
+man_made IN ('surveillance', 'survey_point', 'manhole', 'pipeline', 'pumping_station', 'cutline', 'dyke', 'embankment', 'clearcut', 'flagpole', 'planter', 'street_cabinet', 'water_tap', 'insect_hotel', 'telephone_box');
+
+-- Identify physical & utility infrastructure POIs that qualify even when unnamed/unbranded (geocoder & public service targets)
+CREATE OR REPLACE MACRO is_utility_infrastructure(amenity, leisure, emergency) AS
+amenity IN ('post_box', 'toilets', 'charging_station', 'parking', 'parking_entrance', 'parcel_locker', 'atm', 'drinking_water', 'recycling', 'taxi')
+OR leisure = 'playground'
+OR emergency = 'defibrillator';
+
 -- Primary filter: determines whether an OSM feature qualifies as a POI candidate
 CREATE OR REPLACE MACRO is_poi_candidate(props) AS
 COALESCE(
     (
         json_extract_string(props, '$.name') IS NOT NULL 
         OR json_extract_string(props, '$.brand') IS NOT NULL 
-        OR json_extract_string(props, '$.operator') IS NOT NULL
-        OR json_extract_string(props, '$.amenity') = 'post_box'
-        OR json_extract_string(props, '$.leisure') = 'playground'
+        OR (
+            json_extract_string(props, '$.operator') IS NOT NULL 
+            AND json_extract_string(props, '$.man_made') IS NULL
+        )
+        OR is_utility_infrastructure(
+            json_extract_string(props, '$.amenity'),
+            json_extract_string(props, '$.leisure'),
+            json_extract_string(props, '$.emergency')
+        )
     )
     AND (
         json_extract_string(props, '$.amenity') IS NOT NULL 
@@ -70,6 +86,12 @@ COALESCE(
         OR json_extract_string(props, '$.historic') IS NOT NULL 
         OR json_extract_string(props, '$.railway') IS NOT NULL 
         OR json_extract_string(props, '$.aeroway') IS NOT NULL
+        OR json_extract_string(props, '$.emergency') = 'defibrillator'
+        OR (
+            json_extract_string(props, '$.man_made') IS NOT NULL 
+            AND NOT is_micro_man_made(json_extract_string(props, '$.man_made'))
+            AND (json_extract_string(props, '$.name') IS NOT NULL OR json_extract_string(props, '$.brand') IS NOT NULL)
+        )
     )
     AND (
         json_extract_string(props, '$.amenity') IS NULL 
@@ -94,12 +116,11 @@ COALESCE(
     FALSE
 );
 
--- Resolve primary name of POI (leaves untagged physical POIs like post_box and playground without pseudo-names)
+-- Resolve primary name of POI (leaves untagged physical POIs without pseudo-names; decouples operator)
 CREATE OR REPLACE MACRO resolve_poi_name(props) AS
 COALESCE(
     json_extract_string(props, '$.name'),
-    json_extract_string(props, '$.brand'),
-    json_extract_string(props, '$.operator')
+    json_extract_string(props, '$.brand')
 );
 
 -- Format address array conforming to Overture Places schema

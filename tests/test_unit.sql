@@ -68,7 +68,9 @@ CREATE TEMP TABLE test_cases (
     religion VARCHAR DEFAULT NULL,
     denomination VARCHAR DEFAULT NULL,
     information VARCHAR DEFAULT NULL,
-    name VARCHAR DEFAULT NULL
+    name VARCHAR DEFAULT NULL,
+    man_made VARCHAR DEFAULT NULL,
+    emergency VARCHAR DEFAULT NULL
 );
 
 INSERT INTO test_cases (test_id, expected_category, amenity) VALUES
@@ -136,6 +138,22 @@ INSERT INTO test_cases (test_id, expected_category, tourism, information) VALUES
 INSERT INTO test_cases (test_id, expected_category, tourism, name) VALUES
     ('TC39-Tourist-Office-No-Subtag', 'visitor_center', 'information', 'Office du Tourisme');
 
+INSERT INTO test_cases (test_id, expected_category, emergency) VALUES
+    ('TC40-Defibrillator', 'defibrillator', 'defibrillator');
+
+INSERT INTO test_cases (test_id, expected_category, man_made) VALUES
+    ('TC41-Man-Made-Tower', 'historic_tower', 'tower'),
+    ('TC42-Man-Made-Lighthouse', 'lighthouse', 'lighthouse'),
+    ('TC43-Man-Made-Water-Tower', 'water_tower', 'water_tower'),
+    ('TC44-Man-Made-Windmill', 'windmill', 'windmill');
+
+INSERT INTO test_cases (test_id, expected_category, amenity) VALUES
+    ('TC45-Toilets', 'public_restrooms', 'toilets'),
+    ('TC46-Parking', 'parking', 'parking'),
+    ('TC47-ATM', 'atms', 'atm'),
+    ('TC48-Parcel-Locker', 'package_locker', 'parcel_locker'),
+    ('TC49-Taxi', 'taxi_service', 'taxi');
+
 -- Evaluate categories using the production resolve_poi_category macro
 CREATE TEMP TABLE evaluated AS
 SELECT 
@@ -145,7 +163,8 @@ SELECT
         t.amenity, t.shop, t.tourism, t.leisure, t.office,
         t.craft, t.healthcare, t.historic, t.railway, t.aeroway,
         t.cuisine, t.station, t.religion, t.denomination,
-        t.information, t.name
+        t.information, t.name,
+        t.man_made, t.emergency
     ) AS actual_category
 FROM test_cases t;
 
@@ -220,7 +239,33 @@ SELECT 10 AS id, '{"tourism":"information","name":"Office du Tourisme"}'::JSON A
 UNION ALL
 SELECT 11 AS id, '{"amenity":"post_box"}'::JSON AS properties
 UNION ALL
-SELECT 12 AS id, '{"leisure":"playground","access":"yes"}'::JSON AS properties;
+SELECT 12 AS id, '{"leisure":"playground","access":"yes"}'::JSON AS properties
+UNION ALL
+SELECT 13 AS id, '{"amenity":"toilets","wheelchair":"yes"}'::JSON AS properties
+UNION ALL
+SELECT 14 AS id, '{"amenity":"charging_station","capacity":"4"}'::JSON AS properties
+UNION ALL
+SELECT 15 AS id, '{"amenity":"parking","parking":"surface"}'::JSON AS properties
+UNION ALL
+SELECT 16 AS id, '{"emergency":"defibrillator"}'::JSON AS properties
+UNION ALL
+SELECT 17 AS id, '{"amenity":"parcel_locker","brand":"DHL","ref":"102"}'::JSON AS properties
+UNION ALL
+SELECT 18 AS id, '{"amenity":"parcel_locker","ref":"102"}'::JSON AS properties
+UNION ALL
+SELECT 19 AS id, '{"man_made":"tower","name":"Fernsehturm"}'::JSON AS properties
+UNION ALL
+SELECT 20 AS id, '{"man_made":"flagpole"}'::JSON AS properties
+UNION ALL
+SELECT 21 AS id, '{"man_made":"surveillance","name":"Cam 1"}'::JSON AS properties
+UNION ALL
+SELECT 22 AS id, '{"man_made":"water_tower","name":"Wasserturm"}'::JSON AS properties
+UNION ALL
+SELECT 23 AS id, '{"amenity":"drinking_water"}'::JSON AS properties
+UNION ALL
+SELECT 24 AS id, '{"amenity":"atm"}'::JSON AS properties
+UNION ALL
+SELECT 25 AS id, '{"amenity":"taxi"}'::JSON AS properties;
 
 CREATE TEMP TABLE mock_micro_filtered AS
 SELECT id, resolve_poi_name(properties) AS name
@@ -229,9 +274,10 @@ WHERE is_poi_candidate(properties);
 
 SELECT 
     CASE 
-        WHEN list_sort(list(id)) = [4, 5, 9, 10, 11, 12]
-             AND (SELECT count(*) FROM mock_micro_filtered WHERE id IN (11, 12) AND name IS NULL) = 2
-        THEN '[OK] Micro-infrastructure filter passed: benches and boards excluded, unnamed post boxes and playgrounds preserved with NULL name'
+        WHEN list_sort(list(id)) = [4, 5, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 22, 23, 24, 25]
+             AND (SELECT count(*) FROM mock_micro_filtered WHERE id IN (4, 11, 12, 13, 14, 15, 16, 18, 23, 24, 25) AND name IS NULL) = 11
+             AND (SELECT count(*) FROM mock_micro_filtered WHERE id IN (5, 9, 10, 17, 19, 22) AND name IS NOT NULL) = 6
+        THEN '[OK] Micro-infrastructure & utility filter passed: unnamed utility POIs admitted with NULL name, operator decoupled, and named man_made landmarks retained'
         ELSE error('MICRO-INFRASTRUCTURE FILTER FAILED: unexpected IDs or names retained!')
     END AS micro_filter_check
 FROM mock_micro_filtered;

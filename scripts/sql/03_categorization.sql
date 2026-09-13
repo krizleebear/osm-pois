@@ -5,7 +5,8 @@ CREATE OR REPLACE MACRO resolve_poi_category(
     p_amenity, p_shop, p_tourism, p_leisure, p_office,
     p_craft, p_healthcare, p_historic, p_railway, p_aeroway,
     p_cuisine, p_station, p_religion, p_denomination,
-    p_information := NULL, p_name := NULL
+    p_information := NULL, p_name := NULL,
+    p_man_made := NULL, p_emergency := NULL
 ) AS
 COALESCE(
     -- 1. Cuisine-specific restaurant match (e.g. amenity=restaurant,cuisine=italian -> italian_restaurant)
@@ -85,9 +86,13 @@ COALESCE(
     (SELECT r.overture_cat FROM primary_rules r WHERE r.primary_key = 'historic' AND r.primary_val = p_historic),
     (SELECT r.overture_cat FROM primary_rules r WHERE r.primary_key = 'railway' AND r.primary_val = p_railway),
     (SELECT r.overture_cat FROM primary_rules r WHERE r.primary_key = 'aeroway' AND r.primary_val = p_aeroway),
+    (SELECT r.overture_cat FROM primary_rules r WHERE r.primary_key = 'man_made' AND r.primary_val = p_man_made),
+    (SELECT r.overture_cat FROM primary_rules r WHERE r.primary_key = 'emergency' AND r.primary_val = p_emergency),
     p_amenity,
     p_shop,
     CASE WHEN p_tourism = 'information' THEN p_information ELSE p_tourism END,
     p_leisure,
+    p_man_made,
+    p_emergency,
     'point_of_interest'
 );

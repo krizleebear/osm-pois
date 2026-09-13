@@ -114,6 +114,7 @@ SELECT
     count(CASE WHEN typeof(level) = 'VARCHAR' THEN 1 END),
     count(CASE WHEN typeof(delivery) = 'VARCHAR' THEN 1 END),
     count(CASE WHEN typeof(takeaway) = 'VARCHAR' THEN 1 END),
+    count(CASE WHEN typeof(ref) = 'VARCHAR' THEN 1 END),
     count(CASE WHEN opening_hours IS NOT NULL THEN 1 END),
     count(CASE WHEN len(payment_methods) > 0 THEN 1 END)
 FROM '$OUTPUT_PARQUET';
@@ -135,8 +136,9 @@ VALID_PAY_TYPE=$(echo "$SCHEMA_CHECK" | cut -d',' -f13)
 VALID_LEVEL_TYPE=$(echo "$SCHEMA_CHECK" | cut -d',' -f14)
 VALID_DELIV_TYPE=$(echo "$SCHEMA_CHECK" | cut -d',' -f15)
 VALID_TAKE_TYPE=$(echo "$SCHEMA_CHECK" | cut -d',' -f16)
-WITH_HOURS_COUNT=$(echo "$SCHEMA_CHECK" | cut -d',' -f17)
-WITH_PAY_COUNT=$(echo "$SCHEMA_CHECK" | cut -d',' -f18)
+VALID_REF_TYPE=$(echo "$SCHEMA_CHECK" | cut -d',' -f17)
+WITH_HOURS_COUNT=$(echo "$SCHEMA_CHECK" | cut -d',' -f18)
+WITH_PAY_COUNT=$(echo "$SCHEMA_CHECK" | cut -d',' -f19)
 
 if [ "$VALID_NAMES_RULES" -ne "$TOTAL_COUNT" ] || [ "$VALID_BRAND_RULES" -ne "$TOTAL_COUNT" ]; then
     echo "[FAIL] Expected rules columns to be typed as STRUCT[], got names.rules=$VALID_NAMES_RULES, brand.names.rules=$VALID_BRAND_RULES"
@@ -174,8 +176,8 @@ if [ "$DISTINCT_CONF_COUNT" -lt 10 ]; then
 fi
 
 # Superset Operational Attributes Schema Assertions
-if [ "$VALID_HOURS_TYPE" -ne "$TOTAL_COUNT" ] || [ "$VALID_WHEEL_TYPE" -ne "$TOTAL_COUNT" ] || [ "$VALID_PAY_TYPE" -ne "$TOTAL_COUNT" ] || [ "$VALID_LEVEL_TYPE" -ne "$TOTAL_COUNT" ] || [ "$VALID_DELIV_TYPE" -ne "$TOTAL_COUNT" ] || [ "$VALID_TAKE_TYPE" -ne "$TOTAL_COUNT" ]; then
-    echo "[FAIL] Superset attribute type verification failed (hours=$VALID_HOURS_TYPE, wheel=$VALID_WHEEL_TYPE, pay=$VALID_PAY_TYPE, level=$VALID_LEVEL_TYPE, deliv=$VALID_DELIV_TYPE, take=$VALID_TAKE_TYPE)"
+if [ "$VALID_HOURS_TYPE" -ne "$TOTAL_COUNT" ] || [ "$VALID_WHEEL_TYPE" -ne "$TOTAL_COUNT" ] || [ "$VALID_PAY_TYPE" -ne "$TOTAL_COUNT" ] || [ "$VALID_LEVEL_TYPE" -ne "$TOTAL_COUNT" ] || [ "$VALID_DELIV_TYPE" -ne "$TOTAL_COUNT" ] || [ "$VALID_TAKE_TYPE" -ne "$TOTAL_COUNT" ] || [ "$VALID_REF_TYPE" -ne "$TOTAL_COUNT" ]; then
+    echo "[FAIL] Superset attribute type verification failed (hours=$VALID_HOURS_TYPE, wheel=$VALID_WHEEL_TYPE, pay=$VALID_PAY_TYPE, level=$VALID_LEVEL_TYPE, deliv=$VALID_DELIV_TYPE, take=$VALID_TAKE_TYPE, ref=$VALID_REF_TYPE)"
     exit 1
 fi
 if [ "$WITH_HOURS_COUNT" -lt 50 ]; then

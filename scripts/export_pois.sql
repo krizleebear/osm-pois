@@ -50,7 +50,10 @@ SELECT
     json_extract_string(properties, '$.aeroway') AS aeroway,
     json_extract_string(properties, '$.railway') AS railway,
     json_extract_string(properties, '$.station') AS station,
+    json_extract_string(properties, '$.man_made') AS man_made,
+    json_extract_string(properties, '$.emergency') AS emergency,
     json_extract_string(properties, '$.operator') AS operator,
+    json_extract_string(properties, '$.ref') AS ref,
     json_extract_string(properties, '$.brand') AS brand,
     json_extract_string(properties, '$.brand:wikidata') AS brand_wikidata,
     json_extract_string(properties, '$.addr:street') AS addr_street,
@@ -96,7 +99,8 @@ COPY (
                 f.amenity, f.shop, f.tourism, f.leisure, f.office,
                 f.craft, f.healthcare, f.historic, f.railway, f.aeroway,
                 f.cuisine, f.station, f.religion, f.denomination,
-                f.information, f.name
+                f.information, f.name,
+                f.man_made, f.emergency
             ) AS main_category
         FROM raw_features f
     )
@@ -151,6 +155,7 @@ COPY (
         'places' AS theme,
         'place' AS type,
         -- Extended Operational Attributes (Non-breaking Superset Extension)
+        ref,
         opening_hours,
         cuisine,
         wheelchair,
