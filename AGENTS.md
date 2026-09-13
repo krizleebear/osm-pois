@@ -53,7 +53,7 @@ When modifying or generating code in this repository, you **MUST** follow these 
 
 1. **Zero New Heavy Dependencies**:
    * Do not introduce JVM/Java, heavy Python runtimes, or unneeded container images.
-   * Everything runs in the existing container `ghcr.io/krizleebear/osm2parquet:v1.0.9` (contains DuckDB + spatial + osmium).
+   * Everything runs in the existing container `ghcr.io/krizleebear/osm2parquet:v1.0.10` (contains DuckDB + spatial + osmium).
 2. **Point-on-Surface (No Centroids!)**:
    * For areas, buildings, or relations, **NEVER** use `ST_Centroid()`. Always use `ST_PointOnSurface(geom)` so that the representative coordinate stays within the physical boundary of the feature.
 3. **Deterministic Category Precedence**:
@@ -116,7 +116,7 @@ To ensure consistent pipeline execution, reproducible releases, and clean Git wo
 8. **Container Security & Dependency Invariance (No Root Elevation / No Dynamic Package Install)**:
    - Pipeline steps and container configurations must strictly run unprivileged and must NEVER escalate to root permissions (`--user 0:0` or `sudo`) to bypass container limitations. All required execution binaries (e.g. Python 3, DuckDB, Osmium) must be pre-packaged directly in the container image, and pipeline steps must never perform dynamic runtime package installation (`apt-get install`).
 9. **Local Clean-Room Container Verification**:
-   - Before committing pipeline modifications or scripts, verify execution inside the local Docker container environment (`ghcr.io/krizleebear/osm2parquet:v1.0.9`) to prevent missing-dependency failures in CI runners.
+   - Before committing pipeline modifications or scripts, verify execution inside the local Docker container environment (`ghcr.io/krizleebear/osm2parquet:v1.0.10`) to prevent missing-dependency failures in CI runners.
 10. **Workspace Boundary Scoping**:
     - Limit all grep and file searches strictly to active workspace directories without traversing parent directories.
 11. **Mandatory Pipeline YAML Syntax Pre-Verification**:

@@ -39,8 +39,8 @@ resources:
   # Primary registry: GHCR (no rate limits, no mirror.gcr.io flakiness).
   # Fallback: mirror.gcr.io is attempted in the warmup job for cache pre-warming.
   - container: osm2parquet
-    # krizleebear/osm2parquet:v1.0.9 (standard Docker Schema 2 format)
-    image: ghcr.io/krizleebear/osm2parquet:v1.0.9
+    # krizleebear/osm2parquet:v1.0.10 (standard Docker Schema 2 format)
+    image: ghcr.io/krizleebear/osm2parquet:v1.0.10
 
 stages:
 # ---------------------------------------------------------------------------
@@ -75,8 +75,8 @@ stages:
         targetType: 'inline'
         script: |
           set -e
-          GHCR_IMAGE="ghcr.io/krizleebear/osm2parquet:v1.0.9"
-          MIRROR_IMAGE="mirror.gcr.io/krizleebear/osm2parquet:v1.0.9"
+          GHCR_IMAGE="ghcr.io/krizleebear/osm2parquet:v1.0.10"
+          MIRROR_IMAGE="mirror.gcr.io/krizleebear/osm2parquet:v1.0.10"
 
           pull_with_retry() {
             local IMAGE="$1"

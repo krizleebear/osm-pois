@@ -7,7 +7,7 @@ Transforms cached OSM `.osm.pbf` extracts into cloud-optimized GeoParquet files 
 ## 🎯 Features
 
 - **100% Overture Maps Schema Compatible**: Drop-in replacement for Overture Places in pipelines like [`osm-geocoder`](https://github.com/krizleebear/osm-geocoder).
-- **Zero New Docker Images**: Directly reuses the existing, production-proven `ghcr.io/krizleebear/osm2parquet:v1.0.9` container (equipped with `DuckDB CLI` + `spatial` extension + `osmium-tool`).
+- **Zero New Docker Images**: Directly reuses the existing, production-proven `ghcr.io/krizleebear/osm2parquet:v1.0.10` container (equipped with `DuckDB CLI` + `spatial` extension + `osmium-tool`).
 - **Pure OpenStreetMap Data (ODbL)**: Full provenance, freshly compiled from daily/weekly OSM PBF dumps.
 - **2,100+ Category Mappings**: Direct taxonomy mapping from OSM tags (`amenity`, `shop`, `tourism`, `leisure`, `office`, `craft`, `healthcare`, `historic`) to Overture taxonomy categories.
 - **Serverless & Fast**: Runs via Azure Pipelines parallel matrix across 150+ countries/regions.
@@ -46,7 +46,7 @@ osmium tags-filter monaco-latest.osm.pbf \
 docker run --rm \
   -v $(pwd):/workspace \
   -w /workspace \
-  ghcr.io/krizleebear/osm2parquet:v1.0.9 \
+  ghcr.io/krizleebear/osm2parquet:v1.0.10 \
   ./scripts/entrypoint.sh MC_monaco.pois.pbf places.parquet MC
 ```
 
