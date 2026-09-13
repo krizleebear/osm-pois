@@ -34,4 +34,4 @@ if [ "$(uname -s)" = "Darwin" ] && command -v python3 >/dev/null 2>&1; then
 fi
 
 echo "[INFO] Starting interactive bash in dev container (opencode & agy available) ..."
-exec docker compose -f "$COMPOSE_FILE" run --rm --service-ports dev "$@"
+exec -a "osm-pois" docker compose -f "$COMPOSE_FILE" run --rm --service-ports dev "$@"

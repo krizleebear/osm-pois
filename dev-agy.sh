@@ -56,7 +56,7 @@ fi
 
 echo "[INFO] Starting interactive bash in dev container (agy & opencode available) ..."
 if [ ${#REMAINING_ARGS[@]} -gt 0 ]; then
-  exec docker compose -f "$COMPOSE_FILE" run --rm --service-ports dev "${REMAINING_ARGS[@]}"
+  exec -a "osm-pois" docker compose -f "$COMPOSE_FILE" run --rm --service-ports dev "${REMAINING_ARGS[@]}"
 else
-  exec docker compose -f "$COMPOSE_FILE" run --rm --service-ports dev
+  exec -a "osm-pois" docker compose -f "$COMPOSE_FILE" run --rm --service-ports dev
 fi
