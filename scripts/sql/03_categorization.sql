@@ -4,7 +4,8 @@
 CREATE OR REPLACE MACRO resolve_poi_category(
     p_amenity, p_shop, p_tourism, p_leisure, p_office,
     p_craft, p_healthcare, p_historic, p_railway, p_aeroway,
-    p_cuisine, p_station, p_religion, p_denomination
+    p_cuisine, p_station, p_religion, p_denomination,
+    p_information := NULL, p_name := NULL
 ) AS
 COALESCE(
     -- 1. Cuisine-specific restaurant match (e.g. amenity=restaurant,cuisine=italian -> italian_restaurant)
@@ -60,7 +61,23 @@ COALESCE(
     -- 4. Primary tag matches from deterministic rule table
     (SELECT r.overture_cat FROM primary_rules r WHERE r.primary_key = 'amenity' AND r.primary_val = p_amenity),
     (SELECT r.overture_cat FROM primary_rules r WHERE r.primary_key = 'shop' AND r.primary_val = p_shop),
-    (SELECT r.overture_cat FROM primary_rules r WHERE r.primary_key = 'tourism' AND r.primary_val = p_tourism),
+    -- Tourism resolution: resolve information subtags specially, else query primary_rules
+    CASE 
+        WHEN p_tourism = 'information' THEN
+            CASE 
+                WHEN p_information IN ('office', 'visitor_centre', 'visitor_center') THEN 'visitor_center'
+                WHEN p_information IS NULL AND (
+                    lower(p_name) LIKE '%office du tourisme%'
+                    OR lower(p_name) LIKE '%tourist%info%'
+                    OR lower(p_name) LIKE '%fremdenverkehr%'
+                    OR lower(p_name) LIKE '%visitor%cent%'
+                    OR lower(p_name) LIKE '%syndicat d''initiative%'
+                ) THEN 'visitor_center'
+                WHEN p_information IS NOT NULL THEN p_information
+                ELSE NULL
+            END
+        ELSE (SELECT r.overture_cat FROM primary_rules r WHERE r.primary_key = 'tourism' AND r.primary_val = p_tourism)
+    END,
     (SELECT r.overture_cat FROM primary_rules r WHERE r.primary_key = 'leisure' AND r.primary_val = p_leisure),
     (SELECT r.overture_cat FROM primary_rules r WHERE r.primary_key = 'office' AND r.primary_val = p_office),
     (SELECT r.overture_cat FROM primary_rules r WHERE r.primary_key = 'craft' AND r.primary_val = p_craft),
@@ -70,7 +87,7 @@ COALESCE(
     (SELECT r.overture_cat FROM primary_rules r WHERE r.primary_key = 'aeroway' AND r.primary_val = p_aeroway),
     p_amenity,
     p_shop,
-    p_tourism,
+    CASE WHEN p_tourism = 'information' THEN p_information ELSE p_tourism END,
     p_leisure,
     'point_of_interest'
 );

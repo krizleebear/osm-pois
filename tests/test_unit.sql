@@ -65,7 +65,9 @@ CREATE TEMP TABLE test_cases (
     railway VARCHAR DEFAULT NULL,
     station VARCHAR DEFAULT NULL,
     religion VARCHAR DEFAULT NULL,
-    denomination VARCHAR DEFAULT NULL
+    denomination VARCHAR DEFAULT NULL,
+    information VARCHAR DEFAULT NULL,
+    name VARCHAR DEFAULT NULL
 );
 
 INSERT INTO test_cases (test_id, expected_category, amenity) VALUES
@@ -123,6 +125,16 @@ INSERT INTO test_cases (test_id, expected_category, historic) VALUES
 INSERT INTO test_cases (test_id, expected_category) VALUES
     ('TC33-Fallback-POI', 'point_of_interest');
 
+INSERT INTO test_cases (test_id, expected_category, tourism, information) VALUES
+    ('TC34-Tourist-Info-Office', 'visitor_center', 'information', 'office'),
+    ('TC35-Visitor-Centre', 'visitor_center', 'information', 'visitor_centre'),
+    ('TC36-Visitor-Center-US', 'visitor_center', 'information', 'visitor_center'),
+    ('TC37-Info-Board-Not-Center', 'board', 'information', 'board'),
+    ('TC38-Info-Map-Not-Center', 'map', 'information', 'map');
+
+INSERT INTO test_cases (test_id, expected_category, tourism, name) VALUES
+    ('TC39-Tourist-Office-No-Subtag', 'visitor_center', 'information', 'Office du Tourisme');
+
 -- Evaluate categories using the production resolve_poi_category macro
 CREATE TEMP TABLE evaluated AS
 SELECT 
@@ -131,7 +143,8 @@ SELECT
     resolve_poi_category(
         t.amenity, t.shop, t.tourism, t.leisure, t.office,
         t.craft, t.healthcare, t.historic, t.railway, t.aeroway,
-        t.cuisine, t.station, t.religion, t.denomination
+        t.cuisine, t.station, t.religion, t.denomination,
+        t.information, t.name
     ) AS actual_category
 FROM test_cases t;
 
@@ -192,7 +205,17 @@ SELECT 3 AS id, '{"amenity":"shelter","operator":"DB"}'::JSON AS properties
 UNION ALL
 SELECT 4 AS id, '{"amenity":"post_box","operator":"La Poste"}'::JSON AS properties
 UNION ALL
-SELECT 5 AS id, '{"amenity":"bench","shop":"bakery","name":"Boulangerie"}'::JSON AS properties;
+SELECT 5 AS id, '{"amenity":"bench","shop":"bakery","name":"Boulangerie"}'::JSON AS properties
+UNION ALL
+SELECT 6 AS id, '{"tourism":"information","information":"board","name":"Wanderweg Tafel"}'::JSON AS properties
+UNION ALL
+SELECT 7 AS id, '{"tourism":"information","information":"guidepost","operator":"Schwarzwaldverein"}'::JSON AS properties
+UNION ALL
+SELECT 8 AS id, '{"tourism":"information","information":"map","name":"Stadtplan"}'::JSON AS properties
+UNION ALL
+SELECT 9 AS id, '{"tourism":"information","information":"office","name":"Tourist Information"}'::JSON AS properties
+UNION ALL
+SELECT 10 AS id, '{"tourism":"information","name":"Office du Tourisme"}'::JSON AS properties;
 
 CREATE TEMP TABLE mock_micro_filtered AS
 SELECT id, resolve_poi_name(properties) AS name
@@ -201,8 +224,8 @@ WHERE is_poi_candidate(properties);
 
 SELECT 
     CASE 
-        WHEN list_sort(list(id)) = [4, 5]
-        THEN '[OK] Micro-infrastructure filter passed: benches/waste baskets excluded, post boxes preserved'
+        WHEN list_sort(list(id)) = [4, 5, 9, 10]
+        THEN '[OK] Micro-infrastructure filter passed: benches, waste baskets, and info boards/maps excluded, real POIs preserved'
         ELSE error('MICRO-INFRASTRUCTURE FILTER FAILED: unexpected IDs retained!')
     END AS micro_filter_check
 FROM mock_micro_filtered;

@@ -39,6 +39,7 @@ SELECT
     json_extract_string(properties, '$.cuisine') AS cuisine,
     json_extract_string(properties, '$.shop') AS shop,
     json_extract_string(properties, '$.tourism') AS tourism,
+    json_extract_string(properties, '$.information') AS information,
     json_extract_string(properties, '$.leisure') AS leisure,
     json_extract_string(properties, '$.office') AS office,
     json_extract_string(properties, '$.craft') AS craft,
@@ -73,7 +74,8 @@ COPY (
             resolve_poi_category(
                 f.amenity, f.shop, f.tourism, f.leisure, f.office,
                 f.craft, f.healthcare, f.historic, f.railway, f.aeroway,
-                f.cuisine, f.station, f.religion, f.denomination
+                f.cuisine, f.station, f.religion, f.denomination,
+                f.information, f.name
             ) AS main_category
         FROM raw_features f
     )

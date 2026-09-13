@@ -45,6 +45,10 @@ CAST(
 CREATE OR REPLACE MACRO is_micro_infrastructure(amenity) AS
 amenity IN ('bench', 'waste_basket', 'shelter', 'grit_bin', 'hunting_stand', 'feeding_place', 'waste_disposal', 'ticket_validator');
 
+-- Identify outdoor information micro-infrastructure tags (boards, signposts, maps) that should not be standalone POIs
+CREATE OR REPLACE MACRO is_info_micro_infrastructure(tourism, info) AS
+tourism = 'information' AND COALESCE(info IN ('board', 'guidepost', 'map', 'terminal', 'audioguide', 'tactile_map', 'tactile_model', 'route_marker', 'signpost'), FALSE);
+
 -- Primary filter: determines whether an OSM feature qualifies as a POI candidate
 CREATE OR REPLACE MACRO is_poi_candidate(props) AS
 (
@@ -69,11 +73,21 @@ AND (
     json_extract_string(props, '$.amenity') IS NULL 
     OR NOT is_micro_infrastructure(json_extract_string(props, '$.amenity'))
     OR json_extract_string(props, '$.shop') IS NOT NULL
-    OR json_extract_string(props, '$.tourism') IS NOT NULL
+    OR (json_extract_string(props, '$.tourism') IS NOT NULL AND json_extract_string(props, '$.tourism') != 'information')
     OR json_extract_string(props, '$.historic') IS NOT NULL
     OR json_extract_string(props, '$.office') IS NOT NULL
     OR json_extract_string(props, '$.craft') IS NOT NULL
     OR json_extract_string(props, '$.healthcare') IS NOT NULL
+)
+AND (
+    NOT is_info_micro_infrastructure(json_extract_string(props, '$.tourism'), json_extract_string(props, '$.information'))
+    OR json_extract_string(props, '$.shop') IS NOT NULL
+    OR json_extract_string(props, '$.historic') IS NOT NULL
+    OR json_extract_string(props, '$.office') IS NOT NULL
+    OR json_extract_string(props, '$.craft') IS NOT NULL
+    OR json_extract_string(props, '$.healthcare') IS NOT NULL
+    OR (json_extract_string(props, '$.amenity') IS NOT NULL AND NOT is_micro_infrastructure(json_extract_string(props, '$.amenity')))
+    OR json_extract_string(props, '$.leisure') IS NOT NULL
 );
 
 -- Resolve primary name of POI (with post_box fallback)

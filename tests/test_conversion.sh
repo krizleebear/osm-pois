@@ -103,8 +103,9 @@ SELECT
     count(CASE WHEN typeof(names.common) = 'MAP(VARCHAR, VARCHAR)' THEN 1 END),
     count(CASE WHEN typeof(brand.names.common) = 'MAP(VARCHAR, VARCHAR)' THEN 1 END),
     count(CASE WHEN cardinality(names.common) > 0 THEN 1 END),
-    count(CASE WHEN categories.primary IN ('bench', 'waste_basket', 'shelter', 'grit_bin', 'hunting_stand', 'feeding_place', 'waste_disposal', 'ticket_validator') THEN 1 END),
-    count(CASE WHEN categories.primary = 'post_box' THEN 1 END)
+    count(CASE WHEN categories.primary IN ('bench', 'waste_basket', 'shelter', 'grit_bin', 'hunting_stand', 'feeding_place', 'waste_disposal', 'ticket_validator', 'board', 'guidepost') THEN 1 END),
+    count(CASE WHEN categories.primary = 'post_box' THEN 1 END),
+    count(CASE WHEN categories.primary = 'visitor_center' THEN 1 END)
 FROM '$OUTPUT_PARQUET';
 ")
 
@@ -115,6 +116,7 @@ VALID_BRAND_COMMON=$(echo "$SCHEMA_CHECK" | cut -d',' -f4)
 COMMON_NAMES_COUNT=$(echo "$SCHEMA_CHECK" | cut -d',' -f5)
 MICRO_COUNT=$(echo "$SCHEMA_CHECK" | cut -d',' -f6)
 POST_BOX_COUNT=$(echo "$SCHEMA_CHECK" | cut -d',' -f7)
+VISITOR_CENTER_COUNT=$(echo "$SCHEMA_CHECK" | cut -d',' -f8)
 
 if [ "$VALID_NAMES_RULES" -ne "$TOTAL_COUNT" ] || [ "$VALID_BRAND_RULES" -ne "$TOTAL_COUNT" ]; then
     echo "[FAIL] Expected rules columns to be typed as STRUCT[], got names.rules=$VALID_NAMES_RULES, brand.names.rules=$VALID_BRAND_RULES"
@@ -129,11 +131,15 @@ if [ "$COMMON_NAMES_COUNT" -lt 50 ]; then
     exit 1
 fi
 if [ "$MICRO_COUNT" -ne 0 ]; then
-    echo "[FAIL] Expected 0 micro-infrastructure POIs (benches/waste baskets/shelters), got $MICRO_COUNT"
+    echo "[FAIL] Expected 0 micro-infrastructure POIs (benches/waste baskets/shelters/info boards), got $MICRO_COUNT"
     exit 1
 fi
 if [ "$POST_BOX_COUNT" -lt 1 ]; then
     echo "[FAIL] Expected post boxes to be retained, got $POST_BOX_COUNT"
+    exit 1
+fi
+if [ "$VISITOR_CENTER_COUNT" -gt 10 ] || [ "$VISITOR_CENTER_COUNT" -lt 1 ]; then
+    echo "[FAIL] Expected between 1 and 10 real visitor centers in Monaco, got $VISITOR_CENTER_COUNT"
     exit 1
 fi
 

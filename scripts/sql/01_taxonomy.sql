@@ -29,4 +29,5 @@ SELECT DISTINCT ON (primary_key, primary_val)
     primary_key,
     primary_val
 FROM category_rules
+WHERE NOT (primary_key = 'tourism' AND primary_val = 'information')
 ORDER BY primary_key, primary_val, has_subtag ASC, overture_cat ASC;

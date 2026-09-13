@@ -2081,6 +2081,8 @@ cannabis_tour;tourism=tours,tours=cannabis
 hot_air_balloons_tour;tourism=attraction,attraction=hot_air_balloon
 sightseeing_tour_agency;office=travel_agent,travel_agent=tour
 visitor_center;tourism=information,information=visitor_centre
+visitor_center;tourism=information,information=office
+visitor_center;tourism=information,information=visitor_center
 aircraft_service;craft=engineer
 automotive_service;amenity=car_repair
 auto_body_shop;shop=car_repair,car_repair=bodywork
