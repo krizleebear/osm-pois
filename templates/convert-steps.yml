@@ -1,0 +1,178 @@
+# ============================================================================
+# templates/convert-steps.yml — Reusable steps for converting OSM PBF to GeoParquet
+# ============================================================================
+
+parameters:
+- name: downloadBuildId
+  type: string
+  default: 'latest'
+- name: skipOsmiumFilter
+  type: boolean
+  default: false
+
+steps:
+- checkout: self
+
+- task: Bash@3
+  target: host
+  displayName: 'Reclaim runner host disk space'
+  inputs:
+    targetType: 'inline'
+    script: |
+      echo "[INFO] Disk space before cleanup:"
+      df -h /
+      sudo rm -rf \
+        /usr/share/dotnet \
+        /usr/local/lib/android \
+        /opt/ghc \
+        /usr/local/share/boost \
+        /opt/hostedtoolcache \
+        2>/dev/null || true
+      echo "[INFO] Disk space after cleanup:"
+      df -h /
+
+# Download cached PBF from the osm-download pipeline (definition 9: krizleebear.osm-download-pbf).
+# Never fetch directly from Geofabrik here — that is the download pipeline's job.
+# Download raw PBF from osm-download pipeline when skipOsmiumFilter is false
+- ${{ if or(eq(parameters.downloadBuildId, 'latest'), eq(parameters.downloadBuildId, 'auto')) }}:
+  - task: DownloadPipelineArtifact@2
+    enabled: true
+    displayName: 'Download cached OSM PBF (from osm-download pipeline - latest)'
+    condition: ${{ eq(parameters.skipOsmiumFilter, false) }}
+    inputs:
+      buildType: 'specific'
+      project: 'f85b0393-1484-487a-b6d1-5120b54a70be'
+      definition: '9'
+      buildVersionToDownload: 'latest'
+      artifactName: 'osm-data-$(OSM_REGION)'
+      targetPath: '$(System.DefaultWorkingDirectory)'
+- ${{ if not(or(eq(parameters.downloadBuildId, 'latest'), eq(parameters.downloadBuildId, 'auto'))) }}:
+  - task: DownloadPipelineArtifact@2
+    enabled: true
+    displayName: 'Download cached OSM PBF (from osm-download pipeline - build ${{ parameters.downloadBuildId }})'
+    condition: ${{ eq(parameters.skipOsmiumFilter, false) }}
+    inputs:
+      buildType: 'specific'
+      project: 'f85b0393-1484-487a-b6d1-5120b54a70be'
+      pipeline: '9'
+      buildId: '${{ parameters.downloadBuildId }}'
+      artifactName: 'osm-data-$(OSM_REGION)'
+      targetPath: '$(System.DefaultWorkingDirectory)'
+
+# Download pre-filtered POI PBF artifact when skipOsmiumFilter is true
+- task: DownloadPipelineArtifact@2
+  enabled: true
+  displayName: 'Download pre-filtered POI PBF artifact'
+  condition: ${{ eq(parameters.skipOsmiumFilter, true) }}
+  inputs:
+    buildType: 'current'
+    artifact: 'pois-pbf-$(COUNTRY_CODE)-$(OSM_REGION)'
+    targetPath: '$(System.DefaultWorkingDirectory)'
+
+- task: Bash@3
+  enabled: true
+  displayName: 'Convert PBF to GeoParquet'
+  inputs:
+    targetType: 'inline'
+    script: |
+      set -e
+
+      FILTERED_PBF="$(COUNTRY_CODE)_$(OSM_REGION).pois.pbf"
+      OUTPUT_PARQUET="$(COUNTRY_CODE)_$(OSM_REGION).places.parquet"
+      SKIP_OSMIUM="${{ parameters.skipOsmiumFilter }}"
+
+      if [ "$SKIP_OSMIUM" = "false" ] || [ "$SKIP_OSMIUM" = "False" ]; then
+        FOUND_PBF=$(find . -name "$(OSM_REGION).osm.pbf" 2>/dev/null | head -n 1)
+        if [ -n "$FOUND_PBF" ] && [ -f "$FOUND_PBF" ]; then
+          INPUT_PBF="$FOUND_PBF"
+        else
+          INPUT_PBF="osm-data-$(OSM_REGION)/$(OSM_REGION).osm.pbf"
+        fi
+
+        if [ ! -f "$INPUT_PBF" ]; then
+          echo "****************************************************************"
+          echo " ERROR: Missing PBF file for region '$(OSM_REGION)'!"
+          echo ""
+          echo " File '$(OSM_REGION).osm.pbf' was not found in workspace."
+          echo ""
+          echo " Cause:"
+          echo "   The osm-download pipeline (definition 3) has not cached"
+          echo "   the PBF artifact for '$(OSM_REGION)', or the artifact expired."
+          echo ""
+          echo " Solution:"
+          echo "   Run the osm-download pipeline (definition 3) first to"
+          echo "   populate cached PBF artifacts for '$(OSM_REGION)'."
+          echo "****************************************************************"
+          exit 1
+        fi
+
+        echo "[INFO] Found input PBF: $INPUT_PBF"
+        echo "[INFO] Filtering POI features (amenity, shop, tourism, leisure, etc.) via osmium..."
+        osmium tags-filter "$INPUT_PBF" nwr/amenity nwr/shop nwr/tourism nwr/leisure nwr/office nwr/craft nwr/healthcare nwr/historic nwr/aeroway nwr/cuisine nwr/railway=station,halt nwr/building=church,cathedral,chapel,mosque,synagogue,temple --output="$FILTERED_PBF" --overwrite
+
+        echo "[INFO] Reclaiming disk space: removing raw input PBF immediately..."
+        rm -rf "osm-data-$(OSM_REGION)" "$(OSM_REGION).osm.pbf"
+      else
+        echo "[INFO] Skipping Osmium filter stage (using pre-filtered POI PBF artifact)."
+        if [ ! -f "$FILTERED_PBF" ]; then
+          echo "****************************************************************"
+          echo " ERROR: Pre-filtered PBF file '$FILTERED_PBF' not found!"
+          echo "****************************************************************"
+          exit 1
+        fi
+      fi
+
+      echo "[INFO] Converting filtered PBF to GeoParquet via DuckDB..."
+      ./scripts/entrypoint.sh "$FILTERED_PBF" "$OUTPUT_PARQUET" "$COUNTRY_CODE"
+
+- task: Bash@3
+  displayName: 'Audit GeoParquet quality'
+  condition: succeeded()
+  inputs:
+    targetType: 'inline'
+    script: |
+      set -e
+      OUTPUT_PARQUET="$(COUNTRY_CODE)_$(OSM_REGION).places.parquet"
+      if [ ! -f "$OUTPUT_PARQUET" ]; then
+        echo "##vso[task.logissue type=error]Expected output file $OUTPUT_PARQUET was not produced!"
+        exit 1
+      fi
+
+      POI_COUNT=$(duckdb -dark-mode -no-stdin -noheader -csv -c "SELECT count(*) FROM read_parquet('$OUTPUT_PARQUET');" 2>/dev/null | tail -n 1)
+      echo "[AUDIT] Total POIs for $(OSM_REGION): $POI_COUNT"
+
+      if [ -z "$POI_COUNT" ] || [ "$POI_COUNT" -eq 0 ]; then
+        echo "##vso[task.logissue type=warning]Generated GeoParquet for $(OSM_REGION) contains 0 POIs!"
+      fi
+
+- task: PublishPipelineArtifact@1
+  enabled: true
+  displayName: 'Publish pre-filtered POI PBF artifact'
+  condition: ${{ eq(parameters.skipOsmiumFilter, false) }}
+  inputs:
+    targetPath: '$(COUNTRY_CODE)_$(OSM_REGION).pois.pbf'
+    artifact: 'pois-pbf-$(COUNTRY_CODE)-$(OSM_REGION)'
+    publishLocation: 'pipeline'
+
+- task: PublishPipelineArtifact@1
+  enabled: true
+  displayName: 'Publish GeoParquet artifact'
+  inputs:
+    targetPath: '$(COUNTRY_CODE)_$(OSM_REGION).places.parquet'
+    artifact: 'places-parquet-$(COUNTRY_CODE)-$(OSM_REGION)'
+    publishLocation: 'pipeline'
+
+- task: Bash@3
+  displayName: 'Cleanup workspace'
+  condition: always()
+  inputs:
+    targetType: 'inline'
+    script: |
+      set -e
+      if command -v git >/dev/null 2>&1; then
+        git clean -fdx
+      else
+        echo "[INFO] git not found in container, performing manual artifact cleanup..."
+        rm -f *.pbf *.parquet
+        rm -rf osm-data-*
+      fi

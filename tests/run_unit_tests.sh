@@ -27,12 +27,24 @@ else
     echo "=== [OK] Unit Tests Completed in ${ELAPSED}s ==="
 fi
 
-# Verify Azure Pipelines matrix priority ordering (DE -> AT -> CH)
+# Verify Azure Pipelines Touchstone DE architecture
 if [ -f "$REPO_ROOT/azure-pipelines.yml" ]; then
-    FIRST_THREE=$(sed -n '/strategy:/,/steps:/p' "$REPO_ROOT/azure-pipelines.yml" | grep -E '^[[:space:]]{8}[a-z0-9_-]+:' | head -n 3 | awk '{print $1}' | tr -d ':' | tr '\n' ' ')
-    if [ "$FIRST_THREE" != "01_germany 02_austria 03_switzerland " ]; then
-        echo "ERROR: azure-pipelines.yml matrix must start with 01_germany, 02_austria, 03_switzerland (got: $FIRST_THREE)"
+    if ! grep -q 'job: touchstone_germany' "$REPO_ROOT/azure-pipelines.yml"; then
+        echo "ERROR: azure-pipelines.yml must define job: touchstone_germany!"
         exit 1
     fi
-    echo "=== [OK] Pipeline Matrix DACH Priority Verified (01_germany, 02_austria, 03_switzerland) ==="
+    if ! grep -q 'dependsOn: touchstone_germany' "$REPO_ROOT/azure-pipelines.yml"; then
+        echo "ERROR: azure-pipelines.yml convert job must have dependsOn: touchstone_germany!"
+        exit 1
+    fi
+    if [ ! -f "$REPO_ROOT/templates/convert-steps.yml" ]; then
+        echo "ERROR: templates/convert-steps.yml is missing!"
+        exit 1
+    fi
+    FIRST_TWO=$(sed -n '/strategy:/,/steps:/p' "$REPO_ROOT/azure-pipelines.yml" | grep -E '^[[:space:]]{8}[a-z0-9_-]+:' | head -n 2 | awk '{print $1}' | tr -d ':' | tr '\n' ' ')
+    if [ "$FIRST_TWO" != "austria switzerland " ]; then
+        echo "ERROR: azure-pipelines.yml matrix must start with austria, switzerland (got: $FIRST_TWO)"
+        exit 1
+    fi
+    echo "=== [OK] Touchstone DE Pipeline Architecture Verified (Germany first, Matrix follows) ==="
 fi
