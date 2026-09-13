@@ -29,10 +29,10 @@ fi
 
 # Verify Azure Pipelines matrix priority ordering (DE -> AT -> CH)
 if [ -f "$REPO_ROOT/azure-pipelines.yml" ]; then
-    FIRST_THREE=$(sed -n '/strategy:/,/steps:/p' "$REPO_ROOT/azure-pipelines.yml" | grep -E '^[[:space:]]{8}[a-z0-9-]+:' | head -n 3 | awk '{print $1}' | tr -d ':' | tr '\n' ' ')
-    if [ "$FIRST_THREE" != "germany austria switzerland " ]; then
-        echo "ERROR: azure-pipelines.yml matrix must start with germany, austria, switzerland (got: $FIRST_THREE)"
+    FIRST_THREE=$(sed -n '/strategy:/,/steps:/p' "$REPO_ROOT/azure-pipelines.yml" | grep -E '^[[:space:]]{8}[a-z0-9_-]+:' | head -n 3 | awk '{print $1}' | tr -d ':' | tr '\n' ' ')
+    if [ "$FIRST_THREE" != "01_germany 02_austria 03_switzerland " ]; then
+        echo "ERROR: azure-pipelines.yml matrix must start with 01_germany, 02_austria, 03_switzerland (got: $FIRST_THREE)"
         exit 1
     fi
-    echo "=== [OK] Pipeline Matrix DACH Priority Verified (germany, austria, switzerland) ==="
+    echo "=== [OK] Pipeline Matrix DACH Priority Verified (01_germany, 02_austria, 03_switzerland) ==="
 fi

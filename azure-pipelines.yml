@@ -161,15 +161,15 @@ stages:
 
     strategy:
       matrix:
-        germany:
+        01_germany:
           OSM_REGION: 'germany'
           PBF_URL: 'https://download.geofabrik.de/europe/germany-latest.osm.pbf'
           COUNTRY_CODE: 'DE'
-        austria:
+        02_austria:
           OSM_REGION: 'austria'
           PBF_URL: 'https://download.geofabrik.de/europe/austria-latest.osm.pbf'
           COUNTRY_CODE: 'AT'
-        switzerland:
+        03_switzerland:
           OSM_REGION: 'switzerland'
           PBF_URL: 'https://download.geofabrik.de/europe/switzerland-latest.osm.pbf'
           COUNTRY_CODE: 'CH'
