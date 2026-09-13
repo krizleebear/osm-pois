@@ -3,6 +3,9 @@
 # opencode can be started inside with: opencode
 set -euo pipefail
 
+# Set terminal window/tab title to osm-pois
+printf '\033]0;%s\007' "osm-pois"
+
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 COMPOSE_FILE="$SCRIPT_DIR/docker-compose.dev.yml"
 

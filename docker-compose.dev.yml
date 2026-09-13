@@ -1,6 +1,8 @@
 services:
   dev:
     image: osm-pois:dev
+    container_name: osm-pois-dev
+    hostname: osm-pois
     build:
       context: .
       dockerfile: .devcontainer/Dockerfile

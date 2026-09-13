@@ -89,7 +89,8 @@ RUN cp -r /tmp/.duckdb-ext-cache /home/ubuntu/.duckdb && \
     chown -R ubuntu:ubuntu /home/ubuntu/.duckdb && \
     rm -rf /tmp/.duckdb-ext-cache && \
     printf "INSTALL spatial;\nLOAD spatial;\n" > /home/ubuntu/.duckdbrc && \
-    chown ubuntu:ubuntu /home/ubuntu/.duckdbrc
+    chown ubuntu:ubuntu /home/ubuntu/.duckdbrc && \
+    sed -i 's|\\u@\\h: \\w|[osm-pois] \\w|g' /home/ubuntu/.bashrc /root/.bashrc
 
 # 5. Install clipboard bridge shims for macOS / Docker host clipboard integration
 COPY .devcontainer/bin/* /usr/local/bin/
