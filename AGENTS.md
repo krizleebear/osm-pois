@@ -178,6 +178,21 @@ To ensure consistent pipeline execution, reproducible releases, and clean Git wo
 32. **DuckDB JSONPath & String Quoting Invariant**:
     - In DuckDB `.sql` files, double quotes within single-quoted string literals must NOT be escaped with backslashes. Use `'$."' || k || '"'`, never `'$.\"' || k || '\"'`.
     - DuckDB does not treat backslash as an escape character in standard string literals. Including `\` causes DuckDB to pass a literal backslash into `json_extract_string`, which silently breaks JSONPath key lookup and returns `NULL`.
+33. **Public Repository Transition & Legal Compliance Invariant**:
+    - Prior to transitioning private repositories to public or publishing open-source releases:
+      1. **Multi-Tier Licensing & Disclaimers**:
+         - Verify that `LICENSE.md` and `README.md` clearly delineate all four distinct intellectual property tiers:
+           - **Pipeline Code**: MIT License.
+           - **OSM Data & Parquet Output**: Open Database License (ODbL 1.0) with mandatory attribution and Share-Alike requirements for downstream consumers.
+           - **Category Mappings**: MIT License with Cadence Maps (OST) attribution.
+           - **Schema Specification**: Creative Commons Attribution 4.0 International (CC-BY-4.0) with Overture Maps Foundation attribution.
+      2. **Trademark & Non-Affiliation Disclaimer**:
+         - Include an explicit non-affiliation clause in both `LICENSE.md` and `README.md` confirming that "OpenStreetMap" and "Overture Maps" are trademarks of their respective foundations (OSMF and Joint Development Foundation) and that the project is an independent open-source tool.
+      3. **Git History Privacy & Security Audit**:
+         - Verify via `git log -p` and author log that zero tokens, secrets, personal API keys, or private email addresses exist in commit history.
+         - Confirm that no raw binary dumps (`*.pbf`, `*.parquet`) are tracked in git history.
+      4. **Container Registry Public Visibility**:
+         - Ensure base container images on GHCR (e.g. `ghcr.io/krizleebear/osm2parquet:vX.Y.Z`) have their package visibility configured to **Public**, allowing unauthenticated pulls by external contributors and CI runners.
 
 ---
 
