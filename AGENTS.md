@@ -73,6 +73,22 @@ When modifying or generating code in this repository, you **MUST** follow these 
      1. Ensure it is preserved by `osmium tags-filter` in `azure-pipelines.yml`.
      2. Extract it in `raw_features` and handle it in the category mapping logic in `scripts/sql/03_categorization.sql`.
    * Note: With `osmium export`, all OSM tags are preserved in the JSON `properties` object without requiring manual `config/osmconf.ini` schema adjustments.
+8. **Modular DuckDB SQL & Single Source of Truth (`scripts/sql/`)**:
+   * The conversion pipeline is decoupled into modular components:
+     - `scripts/sql/01_taxonomy.sql`: Loads Overture taxonomy and builds deduplicated mapping rules.
+     - `scripts/sql/02_macros.sql`: Encapsulates reusable scalar/table macros (`osm_names_common`, `osm_brand_common`, `is_poi_candidate`, `format_address`, `empty_rules`).
+     - `scripts/sql/03_categorization.sql`: Defines `resolve_poi_category(...)`, the Single Source of Truth for POI classification.
+     - `scripts/export_pois.sql`: The high-level orchestrator focusing exclusively on streaming ingestion, macro invocation, and Parquet export.
+   * **Never Duplicate Categorization Logic**: `tests/test_unit.sql` must directly `.read` and test the production macros in `scripts/sql/`. Never copy-paste `COALESCE` chains or filter expressions into test files.
+9. **Micro-Infrastructure vs. POI Guardrail**:
+   * Standalone street furniture and micro-infrastructure (`amenity IN ('bench', 'waste_basket', 'shelter', 'grit_bin', 'hunting_stand', 'feeding_place', 'waste_disposal', 'ticket_validator')`) must **never** be extracted as standalone POIs, even if tagged with an `operator` (e.g. municipal street cleaning or transit operators).
+   * **Exception 1**: If the feature carries a real primary place tag (e.g. `shop`, `tourism`, `historic`, `office`, `craft`, `healthcare`), it is preserved.
+   * **Exception 2 (Post Boxes)**: `amenity=post_box` is explicitly preserved as a high-value drop-off POI, defaulting to name `'Post Box'` if neither `name`, `brand`, nor `operator` is provided.
+10. **Multilingual `names.common` & `brand.names.common` Extraction**:
+    * Localized translations must be extracted dynamically into `MAP(VARCHAR, VARCHAR)` from all `name:<lang>` tags, plus `alt_name` and `int_name`.
+    * Non-language and administrative sub-namespaces must be strictly filtered out: `etymology`, `source`, `botanical`, `prefix`, `genitive`, `left`, `right`, `signed`.
+    * `brand.names.common` must follow the same `MAP(VARCHAR, VARCHAR)` structure extracted from `brand:<lang>`.
+    * Schema conformity: `names.rules` and `brand.names.rules` must strictly be typed as `STRUCT(variant VARCHAR, "language" VARCHAR, perspectives STRUCT("mode" VARCHAR, countries VARCHAR[]), "value" VARCHAR, "between" DOUBLE[], side VARCHAR)[]` (via macro `empty_rules()`).
 
 ---
 
@@ -159,6 +175,9 @@ To ensure consistent pipeline execution, reproducible releases, and clean Git wo
       2. Overture Maps Foundation schema specification conforming to CC-BY-4.0 Section 3(a):
          > **"Schema specification © Overture Maps Foundation, licensed under CC-BY-4.0."**
          with hyperlinked text pointing to [https://overturemaps.org/schema/](https://overturemaps.org/schema/) and [https://creativecommons.org/licenses/by/4.0/](https://creativecommons.org/licenses/by/4.0/).
+32. **DuckDB JSONPath & String Quoting Invariant**:
+    - In DuckDB `.sql` files, double quotes within single-quoted string literals must NOT be escaped with backslashes. Use `'$."' || k || '"'`, never `'$.\"' || k || '\"'`.
+    - DuckDB does not treat backslash as an escape character in standard string literals. Including `\` causes DuckDB to pass a literal backslash into `json_extract_string`, which silently breaks JSONPath key lookup and returns `NULL`.
 
 ---
 
