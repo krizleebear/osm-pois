@@ -54,8 +54,11 @@ To prevent vertical crowding and ensure deep inspection of rich Overture schema 
   * Displays real-time connection status, viewport zoom, POI render count, and a persistent **📦 File & Compiler Version Badge** (`compiler_version` • export date / age) that jumps directly to dataset provenance on click.
 * **Left Panel (Controls & Dataset)**:
   1. **Quick Extent Jump**: One-click bounds fitting (`Fit Dataset`) and shortcuts to major cities.
-  2. **Filters**: Real-time filtering by POI name, primary category (top 50 categories), **POI Quality / Minimum Confidence** (Top Quality ≥85%, High ≥70%, Standard ≥55%, Basic ≥40%, Low/Stale <40%), and **Operational Attributes** (With Hours, With Wheelchair, With Cuisine, With Brand, With Contact).
-  3. **Active Dataset & Provenance**: Live row count, file size, dataset age, and comprehensive Parquet KV metadata (compiler, compiler version, export timestamp, country code badge, schema, ODbL and CC-BY-4.0 licenses, and attribution links).
+  2. **Filters & Nearest Match**: Real-time filtering by POI name, primary category (top 50 categories), **POI Quality / Minimum Confidence** (Top Quality ≥85%, High ≥70%, Standard ≥55%, Basic ≥40%, Low/Stale <40%), and **Operational Attributes** (With Hours, With Wheelchair, With Cuisine, With Brand, With Contact).
+     * **🎯 Jump to Nearest Match**: Instantly calculates equirectangular distance from the current map center and smoothly flies to the closest POI matching the active filters (e.g. `playground` + `With Hours`). Emits a pulsating highlight ring with distance popup, inspects the POI automatically, and cycles through successive matches across the dataset on repeat clicks.
+     * **✕ Reset Filters**: One-click reset for all active filter fields.
+     * **Header Jump Hint**: If a filter yields 0 POIs in the current viewport, the top navbar count badge switches to a clickable `POIs: 0 in view • 🎯 Jump` shortcut.
+  3. **Active Dataset & Provenance (Collapsible)**: Live row count, file size, dataset age, and an expandable `<details>` card (closed by default to save vertical space) showing comprehensive Parquet KV metadata (compiler, compiler version, export timestamp, country code badge, schema, ODbL and CC-BY-4.0 licenses, and attribution links). Clicking the navbar `📦` badge automatically unfolds and highlights this card.
   4. **OSM Basemap & Gap Detection**: Opacity controls and the `⚡ Blink Overlay` toggle.
   5. **Level of Detail (LOD) Rules**: Configurable zoom thresholds and sample limits.
 * **Right Panel (POI Details Inspector)**:

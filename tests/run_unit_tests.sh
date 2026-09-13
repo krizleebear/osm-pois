@@ -62,6 +62,8 @@ if [ -f "$REPO_ROOT/viewer/index.html" ]; then
         "cuisine"
         "compiler_version"
         "availableColumns"
+        "findNearestBtn"
+        "jumpToNearestMatch"
     )
     for token in "${REQUIRED_VIEWER_TOKENS[@]}"; do
         if ! grep -q "$token" "$REPO_ROOT/viewer/index.html"; then

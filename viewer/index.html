@@ -338,6 +338,16 @@
       transform: rotate(90deg);
     }
 
+    @keyframes pulseRing {
+      0% { opacity: 0.95; }
+      50% { opacity: 0.35; }
+      100% { opacity: 0.95; }
+    }
+
+    .pulse-marker {
+      animation: pulseRing 1.2s infinite ease-in-out;
+    }
+
     .inspector-row {
       display: flex;
       justify-content: space-between;
@@ -638,6 +648,14 @@
             <option value="has_brand">🏷️ With Brand</option>
             <option value="has_contact">📞 With Contact</option>
           </select>
+        </div>
+        <div style="display: flex; gap: 6px; margin-top: 8px;">
+          <button id="findNearestBtn" class="btn btn-sm primary" style="flex: 2; display: flex; align-items: center; justify-content: center; gap: 5px;" title="Find and fly to the closest POI matching the active filters relative to the map center">
+            🎯 <span>Jump to Nearest Match</span>
+          </button>
+          <button id="resetFiltersBtn" class="btn btn-sm" style="flex: 1;" title="Reset all filters">
+            ✕ Reset
+          </button>
         </div>
       </div>
 
@@ -948,8 +966,9 @@
   let activeBasemap = tileLayers.osm_fr;
   activeBasemap.addTo(map);
 
-  // POI Layer Group (Canvas renderer)
+  // POI Layer Group (Canvas renderer) & Selection Layer
   const poiLayerGroup = L.layerGroup().addTo(map);
+  const selectionLayer = L.layerGroup().addTo(map);
 
   // Global helper for quick bounds
   window.flyToBbox = function(minLon, minLat, maxLon, maxLat) {
@@ -1223,6 +1242,50 @@
 
 
 
+  // Collect all active SQL filter clauses (Single Source of Truth)
+  function getActiveFilterClauses() {
+    const nameFilter = document.getElementById('nameFilterInput')?.value.trim();
+    const catFilter = document.getElementById('categoryFilterSelect')?.value;
+    const confFilter = document.getElementById('confidenceFilterSelect')?.value;
+    const opFilter = document.getElementById('operationalFilterSelect')?.value;
+
+    let filterClauses = [];
+    if (nameFilter) {
+      filterClauses.push(`lower(names.primary) LIKE '%${nameFilter.toLowerCase().replace(/'/g, "''")}%'`);
+    }
+    if (catFilter) {
+      filterClauses.push(`categories.primary = '${catFilter.replace(/'/g, "''")}'`);
+    }
+
+    // Confidence / Quality Filter
+    if (availableColumns.has('confidence') && confFilter) {
+      if (confFilter === 'low_only') {
+        filterClauses.push('TRY_CAST(confidence AS DOUBLE) < 0.40');
+      } else if (parseFloat(confFilter) > 0) {
+        filterClauses.push(`TRY_CAST(confidence AS DOUBLE) >= ${parseFloat(confFilter)}`);
+      }
+    }
+
+    // Operational Attribute Filter
+    if (opFilter === 'has_hours' && availableColumns.has('opening_hours')) {
+      filterClauses.push("opening_hours IS NOT NULL AND trim(opening_hours) != ''");
+    } else if (opFilter === 'has_wheelchair' && availableColumns.has('wheelchair')) {
+      filterClauses.push("wheelchair IS NOT NULL AND trim(wheelchair) != ''");
+    } else if (opFilter === 'has_cuisine' && availableColumns.has('cuisine')) {
+      filterClauses.push("cuisine IS NOT NULL AND trim(cuisine) != ''");
+    } else if (opFilter === 'has_brand' && availableColumns.has('brand')) {
+      filterClauses.push("brand.names.primary IS NOT NULL AND trim(brand.names.primary) != ''");
+    } else if (opFilter === 'has_contact') {
+      let contactParts = [];
+      if (availableColumns.has('websites')) contactParts.push('(websites IS NOT NULL AND len(websites) > 0)');
+      if (availableColumns.has('phones')) contactParts.push('(phones IS NOT NULL AND len(phones) > 0)');
+      if (availableColumns.has('emails')) contactParts.push('(emails IS NOT NULL AND len(emails) > 0)');
+      if (contactParts.length > 0) filterClauses.push(`(${contactParts.join(' OR ')})`);
+    }
+
+    return filterClauses;
+  }
+
   // Viewport Query & POI Rendering
   async function updatePOIs() {
     if (!conn || !currentParquetName || isQueryInProgress) return;
@@ -1238,8 +1301,6 @@
 
     const detailZoomThreshold = parseInt(document.getElementById('detailZoomSlider').value, 10);
     const overviewLimit = parseInt(document.getElementById('overviewLimitSlider').value, 10);
-    const nameFilter = document.getElementById('nameFilterInput').value.trim();
-    const catFilter = document.getElementById('categoryFilterSelect').value;
 
     const modeBadge = document.getElementById('modeBadge');
     const poiCountBadge = document.getElementById('poiCountBadge');
@@ -1270,42 +1331,7 @@
     const startTime = performance.now();
 
     try {
-      let filterClauses = [];
-      if (nameFilter) {
-        filterClauses.push(`lower(names.primary) LIKE '%${nameFilter.toLowerCase().replace(/'/g, "''")}%'`);
-      }
-      if (catFilter) {
-        filterClauses.push(`categories.primary = '${catFilter.replace(/'/g, "''")}'`);
-      }
-
-      // Confidence / Quality Filter
-      const confFilter = document.getElementById('confidenceFilterSelect')?.value;
-      if (availableColumns.has('confidence') && confFilter) {
-        if (confFilter === 'low_only') {
-          filterClauses.push('TRY_CAST(confidence AS DOUBLE) < 0.40');
-        } else if (parseFloat(confFilter) > 0) {
-          filterClauses.push(`TRY_CAST(confidence AS DOUBLE) >= ${parseFloat(confFilter)}`);
-        }
-      }
-
-      // Operational Attribute Filter
-      const opFilter = document.getElementById('operationalFilterSelect')?.value;
-      if (opFilter === 'has_hours' && availableColumns.has('opening_hours')) {
-        filterClauses.push("opening_hours IS NOT NULL AND trim(opening_hours) != ''");
-      } else if (opFilter === 'has_wheelchair' && availableColumns.has('wheelchair')) {
-        filterClauses.push("wheelchair IS NOT NULL AND trim(wheelchair) != ''");
-      } else if (opFilter === 'has_cuisine' && availableColumns.has('cuisine')) {
-        filterClauses.push("cuisine IS NOT NULL AND trim(cuisine) != ''");
-      } else if (opFilter === 'has_brand' && availableColumns.has('brand')) {
-        filterClauses.push("brand.names.primary IS NOT NULL AND trim(brand.names.primary) != ''");
-      } else if (opFilter === 'has_contact') {
-        let contactParts = [];
-        if (availableColumns.has('websites')) contactParts.push('(websites IS NOT NULL AND len(websites) > 0)');
-        if (availableColumns.has('phones')) contactParts.push('(phones IS NOT NULL AND len(phones) > 0)');
-        if (availableColumns.has('emails')) contactParts.push('(emails IS NOT NULL AND len(emails) > 0)');
-        if (contactParts.length > 0) filterClauses.push(`(${contactParts.join(' OR ')})`);
-      }
-
+      const filterClauses = getActiveFilterClauses();
       const extraWhere = filterClauses.length > 0 ? 'AND ' + filterClauses.join(' AND ') : '';
 
       const selectCols = [
@@ -1351,7 +1377,15 @@
       const elapsed = Math.round(performance.now() - startTime);
 
       renderMarkers(rows, isFullDetail);
-      poiCountBadge.textContent = `POIs: ${rows.length.toLocaleString()} (${elapsed}ms)`;
+      if (rows.length === 0 && filterClauses.length > 0) {
+        poiCountBadge.innerHTML = 'POIs: 0 in view • <span style="color:#38bdf8; text-decoration:underline; font-weight:700;">🎯 Jump</span>';
+        poiCountBadge.title = 'No matching POIs in this view. Click to jump to the nearest matching POI in the dataset.';
+        poiCountBadge.style.cursor = 'pointer';
+      } else {
+        poiCountBadge.textContent = `POIs: ${rows.length.toLocaleString()} (${elapsed}ms)`;
+        poiCountBadge.title = '';
+        poiCountBadge.style.cursor = 'default';
+      }
     } catch (err) {
       console.error('Viewport query error:', err);
       const statusDot = document.getElementById('statusDot');
@@ -1372,6 +1406,198 @@
     }
   }
 
+  // Jump to the nearest matching POI (relative to current map center)
+  let visitedNearestIds = new Set();
+  let lastFilterSignature = '';
+
+  async function jumpToNearestMatch() {
+    if (!conn || !currentParquetName) {
+      showBanner('⚠️ No Parquet file loaded. Please drop a file first.', 3000);
+      return;
+    }
+
+    const filterClauses = getActiveFilterClauses();
+    const filterSig = filterClauses.join(' AND ');
+
+    // Reset visited set if filter criteria changed
+    if (filterSig !== lastFilterSignature) {
+      visitedNearestIds.clear();
+      lastFilterSignature = filterSig;
+    }
+
+    const center = map.getCenter();
+    const cLat = center.lat;
+    const cLng = center.lng;
+
+    const findBtn = document.getElementById('findNearestBtn');
+    if (findBtn) {
+      findBtn.disabled = true;
+      findBtn.innerHTML = '⏳ <span>Searching...</span>';
+    }
+
+    try {
+      // Exclude already visited IDs if cycling through matches
+      let extraWhere = [...filterClauses];
+      if (visitedNearestIds.size > 0 && visitedNearestIds.size < 200) {
+        const idList = Array.from(visitedNearestIds).map(id => `'${String(id).replace(/'/g, "''")}'`).join(',');
+        extraWhere.push(`id NOT IN (${idList})`);
+      }
+
+      const whereSql = extraWhere.length > 0 ? 'WHERE ' + extraWhere.join(' AND ') : '';
+
+      const selectCols = [
+        'id',
+        'names.primary AS name',
+        'categories.primary AS category',
+        'basic_category',
+        'operating_status',
+        'version',
+        'sources[1].update_time AS update_time',
+        'sources[1].dataset AS dataset',
+        'sources[1].license AS license',
+        '(bbox.xmin + bbox.xmax) / 2 AS lon',
+        '(bbox.ymin + bbox.ymax) / 2 AS lat',
+        'addresses[1].freeform AS address',
+        'websites[1] AS website',
+        'phones[1] AS phone',
+        availableColumns.has('emails') ? 'emails[1] AS email' : 'NULL AS email',
+        availableColumns.has('confidence') ? 'TRY_CAST(confidence AS DOUBLE) AS confidence' : 'NULL AS confidence',
+        availableColumns.has('opening_hours') ? 'opening_hours' : 'NULL AS opening_hours',
+        availableColumns.has('cuisine') ? 'cuisine' : 'NULL AS cuisine',
+        availableColumns.has('wheelchair') ? 'wheelchair' : 'NULL AS wheelchair',
+        availableColumns.has('payment_methods') ? 'payment_methods' : 'NULL AS payment_methods',
+        availableColumns.has('level') ? 'level' : 'NULL AS level',
+        availableColumns.has('operator') ? 'operator' : 'NULL AS operator',
+        availableColumns.has('delivery') ? 'delivery' : 'NULL AS delivery',
+        availableColumns.has('takeaway') ? 'takeaway' : 'NULL AS takeaway',
+        availableColumns.has('brand') ? 'brand.names.primary AS brand_name, brand.wikidata AS brand_wikidata' : 'NULL AS brand_name, NULL AS brand_wikidata',
+        `sqrt(power(((bbox.xmin + bbox.xmax) / 2 - ${cLng}) * cos(radians(${cLat})) * 111.32, 2) + power(((bbox.ymin + bbox.ymax) / 2 - ${cLat}) * 111.32, 2)) AS dist_km`
+      ];
+
+      const query = `
+        SELECT 
+          ${selectCols.join(',\n          ')}
+        FROM '${currentParquetName}'
+        ${whereSql}
+        ORDER BY dist_km ASC
+        LIMIT 1;
+      `;
+
+      let res = await conn.query(query);
+      let rows = res.toArray().map(r => r.toJSON());
+
+      // If no result and we had visited IDs, cycle/wrap back to the first
+      if (rows.length === 0 && visitedNearestIds.size > 0) {
+        visitedNearestIds.clear();
+        const baseWhereSql = filterClauses.length > 0 ? 'WHERE ' + filterClauses.join(' AND ') : '';
+        const retryQuery = `
+          SELECT 
+            ${selectCols.join(',\n            ')}
+          FROM '${currentParquetName}'
+          ${baseWhereSql}
+          ORDER BY dist_km ASC
+          LIMIT 1;
+        `;
+        res = await conn.query(retryQuery);
+        rows = res.toArray().map(r => r.toJSON());
+        if (rows.length > 0) {
+          showBanner('🔄 Cycled through all matches. Looping back to first.', 2500);
+        }
+      }
+
+      if (rows.length === 0) {
+        showBanner('⚠️ No matching POIs found for the active filters in this dataset.', 4000);
+        return;
+      }
+
+      const match = rows[0];
+      visitedNearestIds.add(match.id);
+
+      const distStr = match.dist_km < 1 
+        ? `${Math.round(match.dist_km * 1000)} m` 
+        : `${match.dist_km.toFixed(1)} km`;
+      const nameStr = match.name || 'Unnamed POI';
+      const catStr = match.category || match.basic_category || 'place';
+
+      // Center and select the matched POI
+      selectPOI(match, true);
+
+      const hopIndex = visitedNearestIds.size;
+      const isFiltered = filterClauses.length > 0;
+      const labelPrefix = isFiltered ? `🎯 Nearest Match #${hopIndex}` : `🎯 Nearest POI`;
+      showBanner(`${labelPrefix}: "${nameStr}" (${catStr}) — ${distStr} away (Centered & Selected)`, 4000);
+
+    } catch (err) {
+      console.error('Error finding nearest matching POI:', err);
+      showBanner(`Error finding nearest match: ${err.message || err}`, 4000);
+    } finally {
+      if (findBtn) {
+        findBtn.disabled = false;
+        findBtn.innerHTML = '🎯 <span>Jump to Nearest Match</span>';
+      }
+    }
+  }
+
+  // Select and Highlight a POI (Center map, open inspector, and draw persistent selection ring)
+  let selectedPoi = null;
+
+  function selectPOI(poi, centerMap = true) {
+    if (!poi) return;
+    selectedPoi = poi;
+
+    const lat = Number(poi.lat);
+    const lon = Number(poi.lon);
+    if (isNaN(lat) || isNaN(lon)) return;
+
+    const targetZoom = Math.max(map.getZoom(), 16);
+
+    // Center map directly on the POI
+    if (centerMap) {
+      map.setView([lat, lon], targetZoom);
+    }
+
+    // Clear previous selection markers
+    selectionLayer.clearLayers();
+
+    // Glowing pulsating selection ring
+    const selectionRing = L.circleMarker([lat, lon], {
+      radius: 18,
+      color: '#38bdf8',
+      weight: 3,
+      fillColor: '#0284c7',
+      fillOpacity: 0.4,
+      className: 'pulse-marker'
+    });
+
+    // Solid center dot
+    const centerDot = L.circleMarker([lat, lon], {
+      radius: 5,
+      color: '#ffffff',
+      weight: 2,
+      fillColor: '#38bdf8',
+      fillOpacity: 1.0
+    });
+
+    const displayName = poi.name ? escapeHtml(poi.name) : `<i>(Unnamed ${escapeHtml(poi.category || poi.basic_category || 'POI')})</i>`;
+    const catName = escapeHtml(poi.category || poi.basic_category || 'place');
+    const hoursSnippet = poi.opening_hours ? `<div style="color: #10b981; font-size: 0.72rem; margin-top: 2px;">🕒 ${escapeHtml(poi.opening_hours)}</div>` : '';
+
+    selectionRing.bindPopup(`
+      <div style="font-family: sans-serif; font-size: 0.82rem; min-width: 150px;">
+        <div style="font-weight: 700; color: #0f172a; margin-bottom: 2px;">${displayName}</div>
+        <div style="color: #0284c7; font-weight: 600; font-size: 0.75rem;">${catName}</div>
+        ${hoursSnippet}
+      </div>
+    `, { offset: [0, -12] });
+
+    selectionLayer.addLayer(selectionRing);
+    selectionLayer.addLayer(centerDot);
+    selectionRing.openPopup();
+
+    // Populate and open right Inspector panel
+    inspectPOI(poi);
+  }
+
   // Render CircleMarkers with Canvas
   function renderMarkers(rows, isFullDetail) {
     poiLayerGroup.clearLayers();
@@ -1385,12 +1611,13 @@
       if (isNaN(lat) || isNaN(lon)) return;
 
       const color = getCategoryColor(poi.category || poi.basic_category);
+      const isSelected = selectedPoi && (selectedPoi.id === poi.id);
 
       const marker = L.circleMarker([lat, lon], {
-        radius: radius,
+        radius: isSelected ? radius + 3 : radius,
         fillColor: color,
-        color: '#ffffff',
-        weight: 1.2,
+        color: isSelected ? '#38bdf8' : '#ffffff',
+        weight: isSelected ? 2.5 : 1.2,
         opacity: poiOpacity,
         fillOpacity: poiOpacity
       });
@@ -1414,9 +1641,9 @@
         offset: [0, -radius]
       });
 
-      // Click to inspect
+      // Click to inspect and select
       marker.on('click', () => {
-        inspectPOI(poi);
+        selectPOI(poi, false);
       });
 
       poiLayerGroup.addLayer(marker);
@@ -1645,7 +1872,10 @@
       </div>
       <div class="inspector-row">
         <span class="inspector-key">Coordinates:</span>
-        <span class="inspector-val">${Number(poi.lat).toFixed(5)}, ${Number(poi.lon).toFixed(5)}</span>
+        <span class="inspector-val" style="display: flex; align-items: center; gap: 6px;">
+          <span>${Number(poi.lat).toFixed(5)}, ${Number(poi.lon).toFixed(5)}</span>
+          <button id="centerOnSelectedPoiBtn" class="btn btn-sm" style="padding: 1px 6px; font-size: 0.68rem; color: #38bdf8; border-color: #38bdf8;" title="Center map on this POI">🎯 Center</button>
+        </span>
       </div>
       ${poi.website ? `
       <div class="inspector-row">
@@ -1672,6 +1902,10 @@
         </a>
       </div>` : ''}
     `;
+
+    document.getElementById('centerOnSelectedPoiBtn')?.addEventListener('click', () => {
+      selectPOI(poi, true);
+    });
 
     // Ensure right inspector panel is open to see the inspection
     const inspectorPanel = document.getElementById('inspectorPanel');
@@ -1791,13 +2025,45 @@
 
   // Filters
   document.getElementById('nameFilterInput').addEventListener('input', () => {
+    visitedNearestIds.clear();
     if (pendingQueryTimeout) clearTimeout(pendingQueryTimeout);
     pendingQueryTimeout = setTimeout(updatePOIs, 250);
   });
 
-  document.getElementById('categoryFilterSelect').addEventListener('change', updatePOIs);
-  document.getElementById('confidenceFilterSelect')?.addEventListener('change', updatePOIs);
-  document.getElementById('operationalFilterSelect')?.addEventListener('change', updatePOIs);
+  document.getElementById('categoryFilterSelect').addEventListener('change', () => {
+    visitedNearestIds.clear();
+    updatePOIs();
+  });
+  
+  document.getElementById('confidenceFilterSelect')?.addEventListener('change', () => {
+    visitedNearestIds.clear();
+    updatePOIs();
+  });
+  
+  document.getElementById('operationalFilterSelect')?.addEventListener('change', () => {
+    visitedNearestIds.clear();
+    updatePOIs();
+  });
+
+  document.getElementById('findNearestBtn')?.addEventListener('click', jumpToNearestMatch);
+
+  document.getElementById('resetFiltersBtn')?.addEventListener('click', () => {
+    document.getElementById('nameFilterInput').value = '';
+    document.getElementById('categoryFilterSelect').value = '';
+    const confSelect = document.getElementById('confidenceFilterSelect');
+    if (confSelect) confSelect.value = '0';
+    const opSelect = document.getElementById('operationalFilterSelect');
+    if (opSelect) opSelect.value = 'all';
+    visitedNearestIds.clear();
+    updatePOIs();
+  });
+
+  document.getElementById('poiCountBadge')?.addEventListener('click', () => {
+    const filterClauses = getActiveFilterClauses();
+    if (filterClauses.length > 0) {
+      jumpToNearestMatch();
+    }
+  });
 
   // File Version Badge click: open sidebar and highlight dataset card
   const fileVersionBadge = document.getElementById('fileVersionBadge');
