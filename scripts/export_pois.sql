@@ -2,11 +2,13 @@
 LOAD spatial;
 
 -- Memory and thread bounds for CI/CD runner environments (Azure DevOps 7GB limit)
-SET max_memory = '4500MB';
+SET max_memory = '5000MB';
 SET temp_directory = '__TEMP_DIR__';
 SET preserve_insertion_order = false;
-SET threads = 2;
+SET threads = 1;
+SET allocator_background_threads = true;
 SET write_buffer_row_group_count = 1;
+SET write_buffer_row_group_memory_limit = '128MB';
 
 -- Configure repository root for loading external mappings
 SET VARIABLE repo_root = '__REPO_ROOT__';
@@ -180,6 +182,7 @@ COPY (
 ) TO '__OUTPUT_PARQUET__' (
     FORMAT PARQUET, 
     COMPRESSION 'ZSTD',
+    ROW_GROUP_SIZE 60000,
     KV_METADATA {
         'source': 'OpenStreetMap',
         'origin': 'OpenStreetMap (https://www.openstreetmap.org)',
