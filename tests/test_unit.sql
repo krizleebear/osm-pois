@@ -310,20 +310,24 @@ FROM schema_type_check;
 -- Check 3.4: Alternative names rules extraction (osm_names_rules)
 CREATE TEMP TABLE mock_rules_test AS
 SELECT 
-    osm_names_rules('{"name":"Hauptbahnhof","alt_name":"Hbf","official_name":"Zentralbahnhof","short_name:de":"Hb","loc_name":"Bahnhof","reg_name":"Grossbahnhof","int_name":"Central Station"}'::JSON) AS rules_populated,
+    osm_names_rules('{"name":"Hauptbahnhof","alt_name":"Hbf","official_name":"Zentralbahnhof","short_name:de":"Hb","loc_name":"Bahnhof","reg_name":"Grossbahnhof","int_name":"Central Station","nickname":"Stachus","nickname:en":"The Gherkin"}'::JSON) AS rules_populated,
     osm_names_rules('{"name":"Bäckerei"}'::JSON) AS rules_empty;
 
 SELECT 
     CASE 
         WHEN typeof(rules_populated) = 'STRUCT(variant VARCHAR, "language" VARCHAR, perspectives STRUCT("mode" VARCHAR, countries VARCHAR[]), "value" VARCHAR, "between" DOUBLE[], side VARCHAR)[]'
          AND typeof(rules_empty) = 'STRUCT(variant VARCHAR, "language" VARCHAR, perspectives STRUCT("mode" VARCHAR, countries VARCHAR[]), "value" VARCHAR, "between" DOUBLE[], side VARCHAR)[]'
-         AND len(rules_populated) = 6
+         AND len(rules_populated) = 8
          AND rules_empty IS NULL
          AND [r.variant for r in rules_populated if r.value = 'Hbf'][1] = 'alternate'
          AND [r.variant for r in rules_populated if r.value = 'Zentralbahnhof'][1] = 'official'
          AND [r.variant for r in rules_populated if r.value = 'Central Station'][1] = 'international'
          AND [r.language for r in rules_populated if r.value = 'Hb'][1] = 'de'
-        THEN '[OK] Alternative name rules extraction test passed: all variants & languages mapped'
+         AND [r.variant for r in rules_populated if r.value = 'Stachus'][1] = 'alternate'
+         AND [r.language for r in rules_populated if r.value = 'Stachus'][1] IS NULL
+         AND [r.variant for r in rules_populated if r.value = 'The Gherkin'][1] = 'alternate'
+         AND [r.language for r in rules_populated if r.value = 'The Gherkin'][1] = 'en'
+        THEN '[OK] Alternative name rules extraction test passed: all variants, nicknames & languages mapped'
         ELSE error('NAME RULES EXTRACTION FAILED!')
     END AS names_rules_check
 FROM mock_rules_test;

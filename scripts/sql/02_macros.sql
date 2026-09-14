@@ -155,6 +155,7 @@ CAST(NULL AS STRUCT(
 CREATE OR REPLACE MACRO rule_variant(k) AS
   CASE 
     WHEN k LIKE 'alt_name%' THEN 'alternate'
+    WHEN k LIKE 'nickname%' THEN 'alternate'
     WHEN k LIKE 'official_name%' THEN 'official'
     WHEN k LIKE 'short_name%' THEN 'short'
     WHEN k LIKE 'loc_name%' THEN 'local'
@@ -169,12 +170,13 @@ CREATE OR REPLACE MACRO rule_lang(k) AS
 CREATE OR REPLACE MACRO osm_name_rule_keys(props) AS [
   k for k in json_keys(props)
   if (
-    k IN ('alt_name', 'official_name', 'short_name', 'loc_name', 'reg_name', 'int_name')
+    k IN ('alt_name', 'official_name', 'short_name', 'loc_name', 'reg_name', 'int_name', 'nickname')
     OR (k LIKE 'alt_name:%' AND k NOT LIKE 'alt_name:%:%')
     OR (k LIKE 'official_name:%' AND k NOT LIKE 'official_name:%:%')
     OR (k LIKE 'short_name:%' AND k NOT LIKE 'short_name:%:%')
     OR (k LIKE 'loc_name:%' AND k NOT LIKE 'loc_name:%:%')
     OR (k LIKE 'reg_name:%' AND k NOT LIKE 'reg_name:%:%')
+    OR (k LIKE 'nickname:%' AND k NOT LIKE 'nickname:%:%')
   )
   AND json_extract_string(props, '$."' || k || '"') != ''
 ];
