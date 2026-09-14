@@ -70,7 +70,8 @@ CREATE TEMP TABLE test_cases (
     information VARCHAR DEFAULT NULL,
     name VARCHAR DEFAULT NULL,
     man_made VARCHAR DEFAULT NULL,
-    emergency VARCHAR DEFAULT NULL
+    emergency VARCHAR DEFAULT NULL,
+    highway VARCHAR DEFAULT NULL
 );
 
 INSERT INTO test_cases (test_id, expected_category, amenity) VALUES
@@ -154,6 +155,10 @@ INSERT INTO test_cases (test_id, expected_category, amenity) VALUES
     ('TC48-Parcel-Locker', 'package_locker', 'parcel_locker'),
     ('TC49-Taxi', 'taxi_service', 'taxi');
 
+INSERT INTO test_cases (test_id, expected_category, highway) VALUES
+    ('TC50-Highway-Rest-Area', 'rest_areas', 'rest_area'),
+    ('TC51-Highway-Services', 'rest_areas', 'services');
+
 -- Evaluate categories using the production resolve_poi_category macro
 CREATE TEMP TABLE evaluated AS
 SELECT 
@@ -164,7 +169,8 @@ SELECT
         t.craft, t.healthcare, t.historic, t.railway, t.aeroway,
         t.cuisine, t.station, t.religion, t.denomination,
         t.information, t.name,
-        t.man_made, t.emergency
+        t.man_made, t.emergency,
+        t.highway
     ) AS actual_category
 FROM test_cases t;
 
@@ -265,7 +271,11 @@ SELECT 23 AS id, '{"amenity":"drinking_water"}'::JSON AS properties
 UNION ALL
 SELECT 24 AS id, '{"amenity":"atm"}'::JSON AS properties
 UNION ALL
-SELECT 25 AS id, '{"amenity":"taxi"}'::JSON AS properties;
+SELECT 25 AS id, '{"amenity":"taxi"}'::JSON AS properties
+UNION ALL
+SELECT 26 AS id, '{"highway":"rest_area"}'::JSON AS properties
+UNION ALL
+SELECT 27 AS id, '{"highway":"services","name":"Rasthof Holmmoor"}'::JSON AS properties;
 
 CREATE TEMP TABLE mock_micro_filtered AS
 SELECT id, resolve_poi_name(properties) AS name
@@ -274,9 +284,9 @@ WHERE is_poi_candidate(properties);
 
 SELECT 
     CASE 
-        WHEN list_sort(list(id)) = [4, 5, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 22, 23, 24, 25]
-             AND (SELECT count(*) FROM mock_micro_filtered WHERE id IN (4, 11, 12, 13, 14, 15, 16, 18, 23, 24, 25) AND name IS NULL) = 11
-             AND (SELECT count(*) FROM mock_micro_filtered WHERE id IN (5, 9, 10, 17, 19, 22) AND name IS NOT NULL) = 6
+        WHEN list_sort(list(id)) = [4, 5, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 22, 23, 24, 25, 26, 27]
+             AND (SELECT count(*) FROM mock_micro_filtered WHERE id IN (4, 11, 12, 13, 14, 15, 16, 18, 23, 24, 25, 26) AND name IS NULL) = 12
+             AND (SELECT count(*) FROM mock_micro_filtered WHERE id IN (5, 9, 10, 17, 19, 22, 27) AND name IS NOT NULL) = 7
         THEN '[OK] Micro-infrastructure & utility filter passed: unnamed utility POIs admitted with NULL name, operator decoupled, and named man_made landmarks retained'
         ELSE error('MICRO-INFRASTRUCTURE FILTER FAILED: unexpected IDs or names retained!')
     END AS micro_filter_check
@@ -296,6 +306,86 @@ SELECT
         ELSE error('SCHEMA TYPE CHECK FAILED!')
     END AS schema_types_check
 FROM schema_type_check;
+
+-- Check 3.4: Alternative names rules extraction (osm_names_rules)
+CREATE TEMP TABLE mock_rules_test AS
+SELECT 
+    osm_names_rules('{"name":"Hauptbahnhof","alt_name":"Hbf","official_name":"Zentralbahnhof","short_name:de":"Hb","loc_name":"Bahnhof","reg_name":"Grossbahnhof","int_name":"Central Station"}'::JSON) AS rules_populated,
+    osm_names_rules('{"name":"Bäckerei"}'::JSON) AS rules_empty;
+
+SELECT 
+    CASE 
+        WHEN typeof(rules_populated) = 'STRUCT(variant VARCHAR, "language" VARCHAR, perspectives STRUCT("mode" VARCHAR, countries VARCHAR[]), "value" VARCHAR, "between" DOUBLE[], side VARCHAR)[]'
+         AND typeof(rules_empty) = 'STRUCT(variant VARCHAR, "language" VARCHAR, perspectives STRUCT("mode" VARCHAR, countries VARCHAR[]), "value" VARCHAR, "between" DOUBLE[], side VARCHAR)[]'
+         AND len(rules_populated) = 6
+         AND rules_empty IS NULL
+         AND [r.variant for r in rules_populated if r.value = 'Hbf'][1] = 'alternate'
+         AND [r.variant for r in rules_populated if r.value = 'Zentralbahnhof'][1] = 'official'
+         AND [r.variant for r in rules_populated if r.value = 'Central Station'][1] = 'international'
+         AND [r.language for r in rules_populated if r.value = 'Hb'][1] = 'de'
+        THEN '[OK] Alternative name rules extraction test passed: all variants & languages mapped'
+        ELSE error('NAME RULES EXTRACTION FAILED!')
+    END AS names_rules_check
+FROM mock_rules_test;
+
+-- Check 3.5: Socials extraction (extract_socials)
+CREATE TEMP TABLE mock_socials_test AS
+SELECT 
+    extract_socials('{"name":"Shop","contact:facebook":"myshopfb","instagram":"https://instagram.com/myshop","contact:twitter":"@myshoptw","contact:linkedin":"company/myshop"}'::JSON) AS socials_populated,
+    extract_socials('{"name":"Shop"}'::JSON) AS socials_empty;
+
+SELECT 
+    CASE 
+        WHEN list_sort(socials_populated) = [
+            'https://instagram.com/myshop',
+            'https://www.facebook.com/myshopfb',
+            'https://www.linkedin.com/company/myshop',
+            'https://x.com/myshoptw'
+        ]
+        AND socials_empty = CAST([] AS VARCHAR[])
+        THEN '[OK] Socials extraction test passed: handles normalized, full URLs preserved, empty list returned when absent'
+        ELSE error('SOCIALS EXTRACTION FAILED!')
+    END AS socials_check
+FROM mock_socials_test;
+
+-- Check 3.6: Alternate categories resolution (resolve_alternate_categories)
+CREATE TEMP TABLE mock_alternate_cat_test AS
+SELECT 
+    resolve_alternate_categories(
+        'cafe',
+        'cafe', 'bakery', NULL, NULL, NULL,
+        NULL, NULL, NULL, NULL,
+        NULL, NULL
+    ) AS bakery_cafe,
+    resolve_alternate_categories(
+        'italian_restaurant',
+        'restaurant', NULL, NULL, NULL, NULL,
+        NULL, NULL, NULL, NULL,
+        'pizza;italian', NULL
+    ) AS pizza_italian,
+    resolve_alternate_categories(
+        'sports_complex',
+        NULL, NULL, NULL, 'sports_centre', NULL,
+        NULL, NULL, NULL, NULL,
+        NULL, 'swimming;fitness'
+    ) AS sports_centre,
+    resolve_alternate_categories(
+        'restaurant',
+        'restaurant', NULL, NULL, NULL, NULL,
+        NULL, NULL, NULL, NULL,
+        NULL, NULL
+    ) AS plain_restaurant;
+
+SELECT 
+    CASE 
+        WHEN bakery_cafe = ['bakery']
+         AND list_sort(pizza_italian) = ['italian', 'pizza', 'pizza_delivery_service', 'restaurant']
+         AND list_sort(sports_centre) = ['adventure_sports_center', 'fitness', 'sports_centre', 'swimming']
+         AND plain_restaurant = CAST([] AS VARCHAR[])
+        THEN '[OK] Alternate categories resolution passed: secondary place tags, cuisines, and sports extracted'
+        ELSE error('ALTERNATE CATEGORIES RESOLUTION FAILED!')
+    END AS alternate_cat_check
+FROM mock_alternate_cat_test;
 
 -- ----------------------------------------------------------------------------
 -- Part 4: POI Confidence Scoring & Operational Tag Extractions

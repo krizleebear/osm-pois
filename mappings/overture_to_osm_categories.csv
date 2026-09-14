@@ -167,6 +167,7 @@ parenting_classes;amenity=training,training=parenting
 placenta_encapsulation_service;healthcare=alternative,alternative=placenta_encapsulation
 bicycle_path;highway=cycleway
 rest_areas;highway=services
+rest_areas;highway=rest_area
 transcription_services;office=administrative,service=transcription
 tree_services;office=contractor,contractor=arborist
 civil_engineers;office=engineering,engineering=civil

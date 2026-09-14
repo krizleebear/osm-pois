@@ -6,7 +6,8 @@ CREATE OR REPLACE MACRO resolve_poi_category(
     p_craft, p_healthcare, p_historic, p_railway, p_aeroway,
     p_cuisine, p_station, p_religion, p_denomination,
     p_information := NULL, p_name := NULL,
-    p_man_made := NULL, p_emergency := NULL
+    p_man_made := NULL, p_emergency := NULL,
+    p_highway := NULL
 ) AS
 COALESCE(
     -- 1. Cuisine-specific restaurant match (e.g. amenity=restaurant,cuisine=italian -> italian_restaurant)
@@ -61,13 +62,61 @@ COALESCE(
     (SELECT lookup FROM taxonomy_lookup).primary_map['historic=' || p_historic],
     (SELECT lookup FROM taxonomy_lookup).primary_map['railway=' || p_railway],
     (SELECT lookup FROM taxonomy_lookup).primary_map['aeroway=' || p_aeroway],
+    (SELECT lookup FROM taxonomy_lookup).primary_map['highway=' || p_highway],
     (SELECT lookup FROM taxonomy_lookup).primary_map['man_made=' || p_man_made],
     (SELECT lookup FROM taxonomy_lookup).primary_map['emergency=' || p_emergency],
     p_amenity,
     p_shop,
     CASE WHEN p_tourism = 'information' THEN p_information ELSE p_tourism END,
     p_leisure,
+    p_highway,
     p_man_made,
     p_emergency,
     'point_of_interest'
 );
+
+-- Single Source of Truth for Alternate Category Resolution
+CREATE OR REPLACE MACRO resolve_alternate_categories(
+    p_main_cat,
+    p_amenity, p_shop, p_tourism, p_leisure, p_office,
+    p_craft, p_healthcare, p_historic, p_highway,
+    p_cuisine, p_sport
+) AS
+[
+  x for x in list_distinct(
+    list_concat(
+      -- Mapped taxonomy categories of secondary tags
+      [
+        (SELECT lookup FROM taxonomy_lookup).primary_map['amenity=' || p_amenity],
+        (SELECT lookup FROM taxonomy_lookup).primary_map['shop=' || p_shop],
+        (SELECT lookup FROM taxonomy_lookup).primary_map['tourism=' || p_tourism],
+        (SELECT lookup FROM taxonomy_lookup).primary_map['leisure=' || p_leisure],
+        (SELECT lookup FROM taxonomy_lookup).primary_map['office=' || p_office],
+        (SELECT lookup FROM taxonomy_lookup).primary_map['craft=' || p_craft],
+        (SELECT lookup FROM taxonomy_lookup).primary_map['healthcare=' || p_healthcare],
+        (SELECT lookup FROM taxonomy_lookup).primary_map['historic=' || p_historic],
+        (SELECT lookup FROM taxonomy_lookup).primary_map['highway=' || p_highway],
+        -- Mapped cuisine categories (up to 2 values)
+        CASE WHEN p_cuisine IS NOT NULL THEN (SELECT lookup FROM taxonomy_lookup).cuisine_map[trim(split_part(p_cuisine, ';', 1))] END,
+        CASE WHEN p_cuisine IS NOT NULL AND len(str_split(p_cuisine, ';')) >= 2 THEN (SELECT lookup FROM taxonomy_lookup).cuisine_map[trim(split_part(p_cuisine, ';', 2))] END,
+        -- Raw place tags (if distinct from mapped)
+        p_amenity,
+        p_shop,
+        p_tourism,
+        p_leisure,
+        p_office,
+        p_craft,
+        p_healthcare,
+        p_historic,
+        p_highway
+      ],
+      list_concat(
+        -- Raw cuisine subtags
+        CASE WHEN p_cuisine IS NOT NULL THEN [trim(c) for c in str_split(p_cuisine, ';') if trim(c) != ''] ELSE CAST([] AS VARCHAR[]) END,
+        -- Raw sport subtags
+        CASE WHEN p_sport IS NOT NULL THEN [trim(s) for s in str_split(p_sport, ';') if trim(s) != ''] ELSE CAST([] AS VARCHAR[]) END
+      )
+    )
+  )
+  if x IS NOT NULL AND x != '' AND x != p_main_cat
+];

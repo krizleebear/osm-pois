@@ -49,6 +49,7 @@ COPY (
             END AS osm_timestamp,
             resolve_poi_name(properties) AS name,
             osm_names_common(properties) AS names_common,
+            osm_names_rules(properties) AS names_rules,
             osm_brand_common(properties) AS brand_common,
             json_extract_string(properties, '$.amenity') AS amenity,
             json_extract_string(properties, '$.religion') AS religion,
@@ -68,6 +69,7 @@ COPY (
             json_extract_string(properties, '$.station') AS station,
             json_extract_string(properties, '$.man_made') AS man_made,
             json_extract_string(properties, '$.emergency') AS emergency,
+            json_extract_string(properties, '$.highway') AS highway,
             json_extract_string(properties, '$.operator') AS operator,
             json_extract_string(properties, '$.ref') AS ref,
             json_extract_string(properties, '$.brand') AS brand,
@@ -79,6 +81,7 @@ COPY (
             COALESCE(json_extract_string(properties, '$.website'), json_extract_string(properties, '$.contact:website')) AS website,
             COALESCE(json_extract_string(properties, '$.phone'), json_extract_string(properties, '$.contact:phone')) AS phone,
             COALESCE(json_extract_string(properties, '$.email'), json_extract_string(properties, '$.contact:email')) AS email,
+            extract_socials(properties) AS socials,
             -- Extended operational attributes (Superset extension)
             json_extract_string(properties, '$.opening_hours') AS opening_hours,
             json_extract_string(properties, '$.wheelchair') AS wheelchair,
@@ -114,20 +117,32 @@ COPY (
                 f.craft, f.healthcare, f.historic, f.railway, f.aeroway,
                 f.cuisine, f.station, f.religion, f.denomination,
                 f.information, f.name,
-                f.man_made, f.emergency
+                f.man_made, f.emergency,
+                f.highway
             ) AS main_category
         FROM raw_features f
+    ),
+    with_alternates AS (
+        SELECT
+            c.*,
+            resolve_alternate_categories(
+                c.main_category,
+                c.amenity, c.shop, c.tourism, c.leisure, c.office,
+                c.craft, c.healthcare, c.historic, c.highway,
+                c.cuisine, c.sport
+            ) AS alternate_categories
+        FROM categorized c
     )
     SELECT
         id,
         geometry,
         -- Categories struct
-        {'primary': main_category, 'alternate': CAST([] AS VARCHAR[])} AS categories,
+        {'primary': main_category, 'alternate': alternate_categories} AS categories,
         confidence,
         -- Contact arrays
         CASE WHEN website IS NOT NULL THEN [website] ELSE CAST([] AS VARCHAR[]) END AS websites,
         CASE WHEN email IS NOT NULL THEN [email] ELSE CAST([] AS VARCHAR[]) END AS emails,
-        CAST([] AS VARCHAR[]) AS socials,
+        socials,
         CASE WHEN phone IS NOT NULL THEN [phone] ELSE CAST([] AS VARCHAR[]) END AS phones,
         -- Brand struct
         {
@@ -144,7 +159,7 @@ COPY (
         {
             'primary': name,
             'common': names_common,
-            'rules': empty_rules()
+            'rules': names_rules
         } AS names,
         -- Sources array
         [{
@@ -157,7 +172,7 @@ COPY (
         }] AS sources,
         'active' AS operating_status,
         main_category AS basic_category,
-        {'primary': main_category, 'hierarchy': COALESCE((SELECT lookup FROM taxonomy_lookup).hierarchy_map[main_category], [main_category]), 'alternates': CAST([] AS VARCHAR[])} AS taxonomy,
+        {'primary': main_category, 'hierarchy': COALESCE((SELECT lookup FROM taxonomy_lookup).hierarchy_map[main_category], [main_category]), 'alternates': alternate_categories} AS taxonomy,
         COALESCE(osm_version, 1) AS version,
         {
             'xmin': ST_X(geometry),
@@ -178,7 +193,7 @@ COPY (
         operator,
         delivery,
         takeaway
-    FROM categorized c
+    FROM with_alternates c
 ) TO '__OUTPUT_PARQUET__' (
     FORMAT PARQUET, 
     COMPRESSION 'ZSTD',
