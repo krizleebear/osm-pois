@@ -99,4 +99,6 @@ RUN chmod +x /usr/local/bin/xclip /usr/local/bin/wl-paste
 USER ubuntu
 WORKDIR /app
 
+ENV GIT_CONFIG_PARAMETERS="'safe.directory=/app'"
+
 ENTRYPOINT ["/bin/bash"]

@@ -23,6 +23,7 @@ services:
       MAC_CLIPBOARD_HOST: host.docker.internal
       MAC_CLIPBOARD_PORT: "4215"
       MAC_CLIPBOARD_TOKEN: ${MAC_CLIPBOARD_TOKEN:-}
+      GIT_CONFIG_PARAMETERS: "'safe.directory=/app'"
     extra_hosts:
       - "host.docker.internal:host-gateway"
     volumes:

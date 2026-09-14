@@ -256,11 +256,19 @@ duckdb -dark-mode -no-stdin -c "SELECT count(*), categories.primary, count(*) FR
 
 # Executing SQL scripts (NEVER pipe via stdin `< file.sql` when `-no-stdin` is set!):
 duckdb -dark-mode -no-stdin -c ".read tests/test_unit.sql"
+
+# Running multiple commands from CLI (use separate -c flags!):
+duckdb -dark-mode -no-stdin \
+  -c "SET VARIABLE repo_root = '/app';" \
+  -c ".read scripts/sql/01_taxonomy.sql" \
+  -c "SELECT count(*) FROM taxonomy_lookup;"
 ```
 
 > [!IMPORTANT]
-> - Always use `-dark-mode -no-stdin` when invoking `duckdb` in CLI commands or test scripts to prevent terminal color detection timeouts (> 5s).
-> - Because `-no-stdin` disables standard input, piping (`duckdb -no-stdin < script.sql`) fails silently. Always use `-c ".read script.sql"`.
+> - **DuckDB Terminal Probe Timeout (> 5s)**: Always use `-dark-mode -no-stdin` when invoking `duckdb` in CLI commands or test scripts to prevent terminal background color detection timeouts.
+> - **Input Redirection vs `.read`**: Because `-no-stdin` disables standard input, piping (`duckdb -no-stdin < script.sql`) closes stdin immediately and exits 0 without running queries. Always execute scripts via `-c ".read script.sql"`.
+> - **`.read` is a CLI Dot-Command (NOT SQL)**: `.read` cannot be chained with SQL statements inside a single `-c` flag (e.g. `duckdb -c "SET x=1; .read file.sql"` fails with `Parser Error: syntax error at or near '.'`). Pass separate `-c` flags for each command, or place all commands inside a `.sql` file loaded via a single `-c ".read file.sql"`.
+> - **Docker Container Git `safe.directory`**: Because dev containers mount `~/.gitconfig` read-only (`:ro`), `git config --global` fails with resource busy. Always configure `ENV GIT_CONFIG_PARAMETERS="'safe.directory=/app'"` in the Dockerfile / docker-compose environment.
 
 ### Querying Official Overture Data Directly (S3 Streaming)
 
