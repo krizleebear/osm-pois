@@ -86,3 +86,7 @@ SELECT {
     )
 } AS lookup;
 
+-- Store taxonomy lookup in a session variable for O(1) getvariable lookups (eliminates cross-product subplans)
+SET VARIABLE taxonomy_lookup = (SELECT lookup FROM taxonomy_lookup);
+
+

@@ -2,7 +2,7 @@
 LOAD spatial;
 
 -- Memory and thread bounds for CI/CD runner environments (Azure DevOps 7GB limit)
-SET max_memory = '5000MB';
+SET max_memory = '4200MB';
 SET temp_directory = '__TEMP_DIR__';
 SET preserve_insertion_order = false;
 SET threads = 1;
@@ -27,6 +27,7 @@ COPY (
             properties
         FROM read_json('__INPUT_JSONL__', 
                        format='newline_delimited', 
+                       maximum_object_size=33554432,
                        columns={'geometry': 'JSON', 'properties': 'JSON'})
         WHERE is_poi_candidate(properties)
           AND geometry IS NOT NULL
@@ -172,7 +173,7 @@ COPY (
         }] AS sources,
         'active' AS operating_status,
         main_category AS basic_category,
-        {'primary': main_category, 'hierarchy': COALESCE((SELECT lookup FROM taxonomy_lookup).hierarchy_map[main_category], [main_category]), 'alternates': alternate_categories} AS taxonomy,
+        {'primary': main_category, 'hierarchy': COALESCE(getvariable('taxonomy_lookup').hierarchy_map[main_category], [main_category]), 'alternates': alternate_categories} AS taxonomy,
         COALESCE(osm_version, 1) AS version,
         {
             'xmin': ST_X(geometry),
@@ -194,6 +195,7 @@ COPY (
         delivery,
         takeaway
     FROM with_alternates c
+    WHERE 1=1 __SPATIAL_FILTER__
 ) TO '__OUTPUT_PARQUET__' (
     FORMAT PARQUET, 
     COMPRESSION 'ZSTD',

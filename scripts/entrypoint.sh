@@ -10,12 +10,13 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 INPUT_PBF="$1"
 OUTPUT_PARQUET="$2"
 COUNTRY_CODE="${3:-}"
+SPATIAL_FILTER="${4:-}"
 
 if [ -z "$INPUT_PBF" ] || [ -z "$OUTPUT_PARQUET" ]; then
     echo "****************************************************************"
     echo " ERROR: Missing required arguments."
     echo ""
-    echo " Usage:  ./scripts/entrypoint.sh <input.osm.pbf> <output.places.parquet> [country_code]"
+    echo " Usage:  ./scripts/entrypoint.sh <input.osm.pbf> <output.places.parquet> [country_code] [spatial_filter]"
     echo "****************************************************************"
     exit 1
 fi
@@ -31,6 +32,81 @@ echo "[INFO] Input  : $INPUT_PBF ($(du -sh "$INPUT_PBF" | cut -f1))"
 echo "[INFO] Output : $OUTPUT_PARQUET"
 echo "[INFO] Country: ${COUNTRY_CODE:-unknown}"
 START_TIME=$(date +%s)
+
+if [ "$COUNTRY_CODE" = "US" ] && [ -z "$SPATIAL_FILTER" ]; then
+    echo "[INFO] US dataset detected. Executing 3-zone spatial partitioning (West, Central, East) for bounded memory execution..."
+    SPLIT_DIR=$(mktemp -d /tmp/us_partition_XXXXXX)
+    trap "rm -rf '$SPLIT_DIR'" EXIT INT TERM
+
+    echo "[INFO] [1/5] Extracting West partition (longitude < -100)..."
+    osmium extract -b -180,15,-100,72 "$INPUT_PBF" -o "$SPLIT_DIR/us_west.pois.pbf" --strategy=complete_ways --overwrite
+
+    echo "[INFO] [2/5] Extracting Central partition (-100 <= longitude < -85)..."
+    osmium extract -b -100,15,-85,72 "$INPUT_PBF" -o "$SPLIT_DIR/us_central.pois.pbf" --strategy=complete_ways --overwrite
+
+    echo "[INFO] [3/5] Extracting East partition (longitude >= -85)..."
+    osmium extract -b -85,15,-65,72 "$INPUT_PBF" -o "$SPLIT_DIR/us_east.pois.pbf" --strategy=complete_ways --overwrite
+
+    echo "[INFO] [4/5] Converting partitions to GeoParquet..."
+    "$SCRIPT_DIR/entrypoint.sh" "$SPLIT_DIR/us_west.pois.pbf" "$SPLIT_DIR/us_west.places.parquet" "$COUNTRY_CODE" "AND ST_X(geometry) < -100"
+    rm -f "$SPLIT_DIR/us_west.pois.pbf"
+
+    "$SCRIPT_DIR/entrypoint.sh" "$SPLIT_DIR/us_central.pois.pbf" "$SPLIT_DIR/us_central.places.parquet" "$COUNTRY_CODE" "AND ST_X(geometry) >= -100 AND ST_X(geometry) < -85"
+    rm -f "$SPLIT_DIR/us_central.pois.pbf"
+
+    "$SCRIPT_DIR/entrypoint.sh" "$SPLIT_DIR/us_east.pois.pbf" "$SPLIT_DIR/us_east.places.parquet" "$COUNTRY_CODE" "AND ST_X(geometry) >= -85"
+    rm -f "$SPLIT_DIR/us_east.pois.pbf"
+
+    echo "[INFO] [5/5] Merging partitioned GeoParquet into $OUTPUT_PARQUET..."
+    BUILD_VERSION="${BUILD_VERSION:-${BUILD_BUILDNUMBER:-${BUILD_NUMBER:-$(git describe --tags --always 2>/dev/null || echo "dev")}}}"
+    EXPORT_TIMESTAMP="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
+
+    duckdb -dark-mode -no-stdin -c "
+    SET preserve_insertion_order = false;
+    SET threads = 2;
+    SET max_memory = '2000MB';
+    COPY (
+        SELECT * FROM read_parquet([
+            '$SPLIT_DIR/us_west.places.parquet',
+            '$SPLIT_DIR/us_central.places.parquet',
+            '$SPLIT_DIR/us_east.places.parquet'
+        ])
+    ) TO '$OUTPUT_PARQUET' (
+        FORMAT PARQUET,
+        COMPRESSION 'ZSTD',
+        ROW_GROUP_SIZE 60000,
+        KV_METADATA {
+            'source': 'OpenStreetMap',
+            'origin': 'OpenStreetMap (https://www.openstreetmap.org)',
+            'dataset': 'OpenStreetMap POIs (Overture Places Schema Compatible)',
+            'attribution': '© OpenStreetMap contributors',
+            'attribution_url': 'https://www.openstreetmap.org/copyright',
+            'license': 'ODbL-1.0 (https://opendatacommons.org/licenses/odbl/)',
+            'license_url': 'https://opendatacommons.org/licenses/odbl/',
+            'copyright': 'Data © OpenStreetMap contributors, licensed under Open Data Commons Open Database License 1.0 (ODbL)',
+            'schema': 'Overture Maps theme=places / type=place',
+            'schema_url': 'https://overturemaps.org/schema/',
+            'schema_license': 'CC-BY-4.0 (https://creativecommons.org/licenses/by/4.0/)',
+            'schema_license_url': 'https://creativecommons.org/licenses/by/4.0/',
+            'schema_attribution': 'Schema specification © Overture Maps Foundation, licensed under Creative Commons Attribution 4.0 International (CC-BY-4.0)',
+            'compiler': 'osm-pois (https://github.com/krizleebear/osm-pois)',
+            'compiler_version': '$BUILD_VERSION',
+            'country_code': '$COUNTRY_CODE',
+            'exported_at': '$EXPORT_TIMESTAMP'
+        }
+    );
+    "
+
+    rm -rf "$SPLIT_DIR"
+    trap - EXIT INT TERM
+
+    END_TIME=$(date +%s)
+    ELAPSED=$((END_TIME - START_TIME))
+    FILE_SIZE=$(du -sh "$OUTPUT_PARQUET" | cut -f1)
+    POI_COUNT=$(duckdb -dark-mode -no-stdin -noheader -csv -c "SELECT count(*) FROM read_parquet('$OUTPUT_PARQUET');" 2>/dev/null | tail -n 1)
+    echo "[OK] Successfully partitioned and merged GeoParquet: $OUTPUT_PARQUET ($FILE_SIZE, $POI_COUNT POIs) in ${ELAPSED}s"
+    exit 0
+fi
 
 TMP_FIFO=$(mktemp -u /tmp/osm_export_XXXXXX.jsonl)
 TMP_SQL=$(mktemp /tmp/export_XXXXXX.sql)
@@ -175,7 +251,7 @@ BUILD_VERSION="${BUILD_VERSION:-${BUILD_BUILDNUMBER:-${BUILD_NUMBER:-$(git descr
 EXPORT_TIMESTAMP="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
 
 echo "[STAGE 1/3] Streaming Osmium export through named pipe directly into DuckDB..."
-(set -o pipefail; osmium export "$INPUT_PBF" --geometry-types=point,polygon --attributes=type,id,version,timestamp --output-format=geojsonseq | tr -d '\036' > "$TMP_FIFO") &
+(set -o pipefail; osmium export "$INPUT_PBF" -i "sparse_file_array,${TMP_DIR}/osmium_idx.tmp" --geometry-types=point,polygon --attributes=type,id,version,timestamp --output-format=geojsonseq | tr -d '\036' > "$TMP_FIFO") &
 OSMIUM_PID=$!
 
 sed \
@@ -186,6 +262,7 @@ sed \
   -e "s|__BUILD_VERSION__|${BUILD_VERSION}|g" \
   -e "s|__EXPORT_TIMESTAMP__|${EXPORT_TIMESTAMP}|g" \
   -e "s|__TEMP_DIR__|${TMP_DIR}|g" \
+  -e "s|__SPATIAL_FILTER__|${SPATIAL_FILTER:-}|g" \
   "$SCRIPT_DIR/export_pois.sql" > "$TMP_SQL"
 
 duckdb -dark-mode -no-stdin -c ".read $TMP_SQL" &
