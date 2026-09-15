@@ -201,10 +201,6 @@ stages:
           OSM_REGION: 'andorra'
           PBF_URL: 'https://download.geofabrik.de/europe/andorra-latest.osm.pbf'
           COUNTRY_CODE: 'AD'
-        azores:
-          OSM_REGION: 'azores'
-          PBF_URL: 'https://download.geofabrik.de/europe/azores-latest.osm.pbf'
-          COUNTRY_CODE: 'PT'
         belarus:
           OSM_REGION: 'belarus'
           PBF_URL: 'https://download.geofabrik.de/europe/belarus-latest.osm.pbf'
