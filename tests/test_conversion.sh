@@ -119,7 +119,9 @@ SELECT
     count(CASE WHEN len(payment_methods) > 0 THEN 1 END),
     count(CASE WHEN names.rules IS NOT NULL THEN 1 END),
     count(CASE WHEN len(categories.alternate) > 0 THEN 1 END),
-    count(CASE WHEN len(socials) > 0 THEN 1 END)
+    count(CASE WHEN len(socials) > 0 THEN 1 END),
+    count(CASE WHEN typeof(tags) = 'MAP(VARCHAR, VARCHAR)' THEN 1 END),
+    count(CASE WHEN cardinality(tags) > 0 THEN 1 END)
 FROM '$OUTPUT_PARQUET';
 ")
 
@@ -145,6 +147,8 @@ WITH_PAY_COUNT=$(echo "$SCHEMA_CHECK" | cut -d',' -f19)
 WITH_NAMES_RULES=$(echo "$SCHEMA_CHECK" | cut -d',' -f20)
 WITH_ALT_CATS=$(echo "$SCHEMA_CHECK" | cut -d',' -f21)
 WITH_SOCIALS=$(echo "$SCHEMA_CHECK" | cut -d',' -f22)
+VALID_TAGS_TYPE=$(echo "$SCHEMA_CHECK" | cut -d',' -f23)
+WITH_TAGS_COUNT=$(echo "$SCHEMA_CHECK" | cut -d',' -f24)
 
 if [ "$VALID_NAMES_RULES" -ne "$TOTAL_COUNT" ] || [ "$VALID_BRAND_RULES" -ne "$TOTAL_COUNT" ]; then
     echo "[FAIL] Expected rules columns to be typed as STRUCT[], got names.rules=$VALID_NAMES_RULES, brand.names.rules=$VALID_BRAND_RULES"
@@ -206,6 +210,14 @@ if [ "$WITH_SOCIALS" -lt 5 ]; then
     echo "[FAIL] Expected at least 5 POIs with socials, got $WITH_SOCIALS"
     exit 1
 fi
+if [ "$VALID_TAGS_TYPE" -ne "$TOTAL_COUNT" ]; then
+    echo "[FAIL] Expected tags column to be typed as MAP(VARCHAR, VARCHAR), got $VALID_TAGS_TYPE / $TOTAL_COUNT"
+    exit 1
+fi
+if [ "$WITH_TAGS_COUNT" -lt 100 ]; then
+    echo "[FAIL] Expected at least 100 POIs with populated tags in Monaco, got $WITH_TAGS_COUNT"
+    exit 1
+fi
 
 # Verify Parquet File-Level KV_METADATA
 META_STATS=$(duckdb -dark-mode -no-stdin -noheader -csv -c "
@@ -233,5 +245,5 @@ if [ "$HAS_ATTR" -ne 1 ] || [ "$HAS_LIC" -ne 1 ] || [ "$HAS_SRC" -ne 1 ] || [ "$
     exit 1
 fi
 
-echo "=== [OK] Integration Test Passed ($TOTAL_COUNT POIs generated, $WAY_COUNT ways, $WITH_ADDR with addresses, $COMMON_NAMES_COUNT multilingual names, $WITH_NAMES_RULES with names.rules, $WITH_ALT_CATS with alt categories, $WITH_SOCIALS with socials, $POST_BOX_COUNT post boxes, rules STRUCT[] & common MAP schema types verified, Parquet KV metadata verified) ==="
+echo "=== [OK] Integration Test Passed ($TOTAL_COUNT POIs generated, $WAY_COUNT ways, $WITH_ADDR with addresses, $COMMON_NAMES_COUNT multilingual names, $WITH_NAMES_RULES with names.rules, $WITH_ALT_CATS with alt categories, $WITH_SOCIALS with socials, $WITH_TAGS_COUNT with raw tags, $POST_BOX_COUNT post boxes, rules STRUCT[] & common/tags MAP schema types verified, Parquet KV metadata verified) ==="
 rm -f "$OUTPUT_PARQUET"

@@ -494,3 +494,31 @@ SELECT
 FROM evaluated_confidence
 WHERE expected_score != actual_score;
 
+-- Check 4.3: Generic Raw OSM Tags Extraction (osm_raw_tags)
+CREATE TEMP TABLE mock_raw_tags_test AS
+SELECT 
+    osm_raw_tags('{"amenity":"charging_station","socket:type2":"yes","capacity":"4","payment:app":"yes","@id":"123","@type":"node","@version":"2","@timestamp":"1600000000"}'::JSON) AS tags_charging,
+    osm_raw_tags('{"@id":"456","@type":"node","@version":"1"}'::JSON) AS tags_empty,
+    osm_raw_tags('{"fixme:\"note\"":"check value","addr:street":"Rue de Lyon","@id":"789"}'::JSON) AS tags_special;
+
+SELECT 
+    CASE 
+        WHEN typeof(tags_charging) = 'MAP(VARCHAR, VARCHAR)'
+         AND tags_charging['socket:type2'] = 'yes'
+         AND tags_charging['capacity'] = '4'
+         AND tags_charging['payment:app'] = 'yes'
+         AND tags_charging['amenity'] = 'charging_station'
+         AND tags_charging['@id'] IS NULL
+         AND tags_charging['@type'] IS NULL
+         AND tags_charging['@version'] IS NULL
+         AND cardinality(tags_charging) = 4
+         AND tags_empty IS NULL
+         AND typeof(tags_special) = 'MAP(VARCHAR, VARCHAR)'
+         AND tags_special['fixme:"note"'] = 'check value'
+         AND tags_special['addr:street'] = 'Rue de Lyon'
+         AND cardinality(tags_special) = 2
+        THEN '[OK] Generic raw tags extraction test passed: MAP(VARCHAR, VARCHAR) preserved, @-metadata excluded, NULL on tagless features'
+        ELSE error('RAW TAGS EXTRACTION TEST FAILED!')
+    END AS raw_tags_check
+FROM mock_raw_tags_test;
+

@@ -92,6 +92,12 @@ When modifying or generating code in this repository, you **MUST** follow these 
     * Non-language and administrative sub-namespaces must be strictly filtered out: `etymology`, `source`, `botanical`, `prefix`, `genitive`, `left`, `right`, `signed`.
     * `brand.names.common` must follow the same `MAP(VARCHAR, VARCHAR)` structure extracted from `brand:<lang>`.
     * Schema conformity: `names.rules` and `brand.names.rules` must strictly be typed as `STRUCT(variant VARCHAR, "language" VARCHAR, perspectives STRUCT("mode" VARCHAR, countries VARCHAR[]), "value" VARCHAR, "between" DOUBLE[], side VARCHAR)[]` (via macro `empty_rules()`).
+11. **Generic Raw Tags Extension (`tags MAP(VARCHAR, VARCHAR)`)**:
+    * A non-breaking generic `tags MAP(VARCHAR, VARCHAR)` column is appended to the Superset Extension block of `places.parquet`.
+    * Contains all unnormalized, unaliased raw OSM tags extracted directly from `properties`.
+    * Osmium meta-attributes (`@type`, `@id`, `@version`, `@timestamp`) are strictly excluded via macro `osm_raw_tags(props)`.
+    * Evaluates to `NULL` only when a feature carries zero OSM tags.
+    * Serves as an open escape hatch for downstream consumers (e.g. EV socket types, capacity, payment apps) without requiring schema adjustments or lossy upstream normalization.
 
 ---
 

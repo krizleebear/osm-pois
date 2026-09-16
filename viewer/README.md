@@ -65,7 +65,7 @@ To prevent vertical crowding and ensure deep inspection of rich Overture schema 
   * Dedicated floating panel that automatically opens when a POI circle marker is clicked.
   * **POI Quality & Confidence**: Displays the calculated upstream confidence score (0.10 - 0.99) with color-coded rating tier, animated progress bar, and contributing quality signal badges (Hours, Contact, Address, Wheelchair, Brand, Mature revision).
   * **Opening Hours**: Formatted opening hours block with automatic `Open 24/7` detection.
-  * **Operational & Accessibility Depth**: Wheelchair accessibility badge (Accessible, Limited, Not accessible, Designated), payment methods chips (Cash, Cards, Contactless), cuisine tags, floor/level, operator, and delivery/takeaway indicators.
+  * **Operational & Accessibility Depth**: Wheelchair accessibility badge (Accessible, Limited, Not accessible, Designated), payment methods chips (Cash, Cards, Contactless), cuisine tags, floor/level, operator, delivery/takeaway indicators, and expandable raw OSM tags (`tags MAP(VARCHAR, VARCHAR)`).
   * **Brand & Identity**: Primary brand name and direct links to Wikidata entity records.
   * **Core Schema & Provenance**: Name, primary/basic categories, operating status, OSM revision (`v14`), last edit timestamp, address, coordinates, phone, website, email, and direct links to the OSM object and its version history.
   * Can be toggled independently via the `POI Details` button in the header.

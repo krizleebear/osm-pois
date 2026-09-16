@@ -41,6 +41,26 @@ CAST(
     ) AS MAP(VARCHAR, VARCHAR)
 );
 
+-- Extract all raw OSM tag keys (excluding Osmium internal metadata attributes @type, @id, @version, @timestamp)
+CREATE OR REPLACE MACRO osm_raw_keys(props) AS [
+    k for k in json_keys(props)
+    if not starts_with(k, '@')
+];
+
+-- Build MAP(VARCHAR, VARCHAR) of all raw OSM tags (preserves unnormalized keys & values; NULL if feature has no OSM tags)
+CREATE OR REPLACE MACRO osm_raw_tags(props) AS
+CASE 
+    WHEN len(osm_raw_keys(props)) > 0
+    THEN CAST(
+        map(
+            [k for k in osm_raw_keys(props)],
+            [json_extract_string(props, '$."' || replace(replace(k, '\', '\\'), '"', '\"') || '"') for k in osm_raw_keys(props)]
+        ) AS MAP(VARCHAR, VARCHAR)
+    )
+    ELSE NULL
+END;
+
+
 -- Identify micro-infrastructure tags (street furniture) that should not be extracted as standalone POIs
 CREATE OR REPLACE MACRO is_micro_infrastructure(amenity) AS
 list_contains(['bench', 'waste_basket', 'shelter', 'grit_bin', 'hunting_stand', 'feeding_place', 'waste_disposal', 'ticket_validator'], amenity);

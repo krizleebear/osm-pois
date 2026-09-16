@@ -90,6 +90,7 @@ COPY (
             extract_poi_level(properties) AS level,
             json_extract_string(properties, '$.delivery') AS delivery,
             json_extract_string(properties, '$.takeaway') AS takeaway,
+            osm_raw_tags(properties) AS tags,
             -- Upstream POI confidence scoring
             calculate_poi_confidence(
                 properties,
@@ -193,7 +194,8 @@ COPY (
         level,
         operator,
         delivery,
-        takeaway
+        takeaway,
+        tags
     FROM with_alternates c
     WHERE 1=1 __SPATIAL_FILTER__
 ) TO '__OUTPUT_PARQUET__' (

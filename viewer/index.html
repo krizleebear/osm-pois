@@ -1359,6 +1359,7 @@
         availableColumns.has('operator') ? 'operator' : 'NULL AS operator',
         availableColumns.has('delivery') ? 'delivery' : 'NULL AS delivery',
         availableColumns.has('takeaway') ? 'takeaway' : 'NULL AS takeaway',
+        availableColumns.has('tags') ? 'tags' : 'NULL AS tags',
         availableColumns.has('brand') ? 'brand.names.primary AS brand_name, brand.wikidata AS brand_wikidata' : 'NULL AS brand_name, NULL AS brand_wikidata'
       ];
 
@@ -1470,6 +1471,7 @@
         availableColumns.has('operator') ? 'operator' : 'NULL AS operator',
         availableColumns.has('delivery') ? 'delivery' : 'NULL AS delivery',
         availableColumns.has('takeaway') ? 'takeaway' : 'NULL AS takeaway',
+        availableColumns.has('tags') ? 'tags' : 'NULL AS tags',
         availableColumns.has('brand') ? 'brand.names.primary AS brand_name, brand.wikidata AS brand_wikidata' : 'NULL AS brand_name, NULL AS brand_wikidata',
         `sqrt(power(((bbox.xmin + bbox.xmax) / 2 - ${cLng}) * cos(radians(${cLat})) * 111.32, 2) + power(((bbox.ymin + bbox.ymax) / 2 - ${cLat}) * 111.32, 2)) AS dist_km`
       ];
@@ -1892,6 +1894,32 @@
         <span class="inspector-key">Email:</span>
         <span class="inspector-val"><a href="mailto:${escapeHtml(poi.email)}" style="color:#38bdf8;">${escapeHtml(poi.email)}</a></span>
       </div>` : ''}
+      ${(() => {
+        if (!poi.tags) return '';
+        let tagEntries = [];
+        if (poi.tags instanceof Map) {
+          tagEntries = Array.from(poi.tags.entries());
+        } else if (typeof poi.tags === 'object' && poi.tags !== null) {
+          tagEntries = Object.entries(poi.tags);
+        }
+        if (tagEntries.length === 0) return '';
+        const tagRows = tagEntries.map(([k, v]) => `
+          <div style="display: flex; justify-content: space-between; font-size: 0.72rem; padding: 2px 0; border-bottom: 1px dashed #334155;">
+            <span style="color: #94a3b8; font-family: monospace;">${escapeHtml(String(k))}</span>
+            <span style="color: #f1f5f9; font-family: monospace; max-width: 60%; text-align: right; word-break: break-all;">${escapeHtml(String(v))}</span>
+          </div>
+        `).join('');
+        return `
+          <details style="margin-top: 8px; border: 1px solid #334155; border-radius: 4px; padding: 4px 6px; background: rgba(30, 41, 59, 0.5);">
+            <summary style="font-size: 0.75rem; font-weight: 600; color: #38bdf8; cursor: pointer;">
+              OSM Raw Tags (${tagEntries.length})
+            </summary>
+            <div style="margin-top: 6px; max-height: 180px; overflow-y: auto;">
+              ${tagRows}
+            </div>
+          </details>
+        `;
+      })()}
       ${osmUrl ? `
       <div style="margin-top: 8px; padding-top: 6px; border-top: 1px solid #334155; display: flex; gap: 6px;">
         <a href="${osmUrl}" target="_blank" class="btn btn-sm" style="flex: 1; color: #38bdf8; border-color: #38bdf8; text-align: center;">
