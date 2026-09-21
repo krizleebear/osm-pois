@@ -91,6 +91,9 @@ COPY (
             json_extract_string(properties, '$.delivery') AS delivery,
             json_extract_string(properties, '$.takeaway') AS takeaway,
             osm_raw_tags(properties) AS tags,
+            -- Metric footprint area (m², integer) of polygon/multipolygon POI geometries;
+            -- NULL for point/node features (see osm_area_sqm in 02_macros.sql)
+            osm_area_sqm(geom) AS area_m2,
             -- Upstream POI confidence scoring
             calculate_poi_confidence(
                 properties,
@@ -195,6 +198,7 @@ COPY (
         operator,
         delivery,
         takeaway,
+        area_m2,
         tags
     FROM with_alternates c
     WHERE 1=1 __SPATIAL_FILTER__

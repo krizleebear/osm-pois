@@ -121,7 +121,13 @@ SELECT
     count(CASE WHEN len(categories.alternate) > 0 THEN 1 END),
     count(CASE WHEN len(socials) > 0 THEN 1 END),
     count(CASE WHEN typeof(tags) = 'MAP(VARCHAR, VARCHAR)' THEN 1 END),
-    count(CASE WHEN cardinality(tags) > 0 THEN 1 END)
+    count(CASE WHEN cardinality(tags) > 0 THEN 1 END),
+    count(CASE WHEN area_m2 IS NOT NULL THEN 1 END),
+    count(CASE WHEN area_m2 IS NOT NULL AND typeof(area_m2) = 'BIGINT' THEN 1 END),
+    count(CASE WHEN id LIKE 'osm:way/%' AND area_m2 IS NOT NULL AND area_m2 > 0 THEN 1 END),
+    count(CASE WHEN id LIKE 'osm:node/%' THEN 1 END),
+    count(CASE WHEN id LIKE 'osm:node/%' AND area_m2 IS NULL THEN 1 END),
+    count(CASE WHEN id LIKE 'osm:relation/%' AND area_m2 IS NOT NULL AND area_m2 > 0 THEN 1 END)
 FROM '$OUTPUT_PARQUET';
 ")
 
@@ -149,6 +155,13 @@ WITH_ALT_CATS=$(echo "$SCHEMA_CHECK" | cut -d',' -f21)
 WITH_SOCIALS=$(echo "$SCHEMA_CHECK" | cut -d',' -f22)
 VALID_TAGS_TYPE=$(echo "$SCHEMA_CHECK" | cut -d',' -f23)
 WITH_TAGS_COUNT=$(echo "$SCHEMA_CHECK" | cut -d',' -f24)
+WITH_AREA_COUNT=$(echo "$SCHEMA_CHECK" | cut -d',' -f25)
+ALL_AREA_BIGINT=$(echo "$SCHEMA_CHECK" | cut -d',' -f26)
+WAYS_WITH_AREA=$(echo "$SCHEMA_CHECK" | cut -d',' -f27)
+NODE_COUNT=$(echo "$SCHEMA_CHECK" | cut -d',' -f28)
+NODES_WITHOUT_AREA=$(echo "$SCHEMA_CHECK" | cut -d',' -f29)
+RELS_WITH_AREA=$(echo "$SCHEMA_CHECK" | cut -d',' -f30)
+REL_COUNT=$RELS_WITH_AREA
 
 if [ "$VALID_NAMES_RULES" -ne "$TOTAL_COUNT" ] || [ "$VALID_BRAND_RULES" -ne "$TOTAL_COUNT" ]; then
     echo "[FAIL] Expected rules columns to be typed as STRUCT[], got names.rules=$VALID_NAMES_RULES, brand.names.rules=$VALID_BRAND_RULES"
@@ -216,6 +229,30 @@ if [ "$VALID_TAGS_TYPE" -ne "$TOTAL_COUNT" ]; then
 fi
 if [ "$WITH_TAGS_COUNT" -lt 100 ]; then
     echo "[FAIL] Expected at least 100 POIs with populated tags in Monaco, got $WITH_TAGS_COUNT"
+    exit 1
+fi
+if [ "$WAYS_WITH_AREA" -ne "$WAY_COUNT" ]; then
+    echo "[FAIL] Expected every way/relation POI to expose a metric area_m2 > 0 (EPSG:6933 equal-area m²), got $WAYS_WITH_AREA / $WAY_COUNT"
+    exit 1
+fi
+if [ "$NODES_WITHOUT_AREA" -gt $(( TOTAL_COUNT - WAY_COUNT - REL_COUNT )) ]; then
+    echo "[FAIL] Expected ONLY osm:node POIs to expose area_m2 = NULL, but got $NODES_WITHOUT_AREA NULL-area POIs; expected $((TOTAL_COUNT - WAY_COUNT - REL_COUNT)) nodes ($WAY_COUNT ways + $REL_COUNT relations must carry area)"
+    exit 1
+fi
+if [ "$NODES_WITHOUT_AREA" -lt $(( TOTAL_COUNT - WAY_COUNT - REL_COUNT - 5 )) ]; then
+    echo "[FAIL] Expected every osm:node POI (points/label points) to expose area_m2 = NULL, got only $NODES_WITHOUT_AREA of $((TOTAL_COUNT - WAY_COUNT - REL_COUNT)) node POIs"
+    exit 1
+fi
+if [ "$NODES_WITHOUT_AREA" -ne $(( TOTAL_COUNT - WAY_COUNT - REL_COUNT )) ]; then
+    echo "[FAIL] Expected exactly $((TOTAL_COUNT - WAY_COUNT - REL_COUNT)) node POIs with area_m2 = NULL (zero area for points), got $NODES_WITHOUT_AREA"
+    exit 1
+fi
+if [ "$WITH_AREA_COUNT" -ne $(( WAYS_WITH_AREA + RELS_WITH_AREA )) ]; then
+    echo "[FAIL] Expected area_m2 to be populated exactly on way + relation POIs (way/relation footprints, integer m²), got $WITH_AREA_COUNT area values vs $((WAYS_WITH_AREA + RELS_WITH_AREA)) ways+relations"
+    exit 1
+fi
+if [ "$ALL_AREA_BIGINT" -ne "$WITH_AREA_COUNT" ]; then
+    echo "[FAIL] Expected every area_m2 value to be typed BIGINT (integer m²), got $ALL_AREA_BIGINT of $WITH_AREA_COUNT area values"
     exit 1
 fi
 

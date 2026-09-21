@@ -391,6 +391,31 @@ SELECT
     END AS alternate_cat_check
 FROM mock_alternate_cat_test;
 
+-- Check 3.7: Metric footprint area macro (osm_area_sqm)
+-- Globally valid equal-area EASE-Grid 2.0 / WGS84 projection (EPSG:6933); integer m²; NULL for
+-- point / non-area geometries. Cross-validates both the type contract and the numeric magnitude.
+CREATE TEMP TABLE mock_area_test AS
+SELECT
+    osm_area_sqm(ST_GeomFromText('POLYGON((7.409 43.707, 7.421 43.707, 7.421 43.715, 7.409 43.715, 7.409 43.707))')) AS area_monaco_poly,
+    osm_area_sqm(ST_GeomFromText('POINT(7.41 43.71)')) AS area_point,
+    osm_area_sqm(ST_GeomFromText('LINESTRING(7.40 43.70, 7.42 43.72)')) AS area_line,
+    osm_area_sqm(NULL) AS area_null,
+    osm_area_sqm(ST_GeomFromText('MULTIPOLYGON(((7.409 43.707, 7.421 43.707, 7.421 43.715, 7.409 43.715, 7.409 43.707)))')) AS area_multi;
+
+SELECT
+    CASE
+        WHEN typeof(area_monaco_poly) = 'BIGINT'
+         AND area_monaco_poly BETWEEN 700000 AND 1100000
+         AND area_point IS NULL
+         AND area_line IS NULL
+         AND area_null IS NULL
+         AND typeof(area_multi) = 'BIGINT'
+         AND area_multi = area_monaco_poly
+        THEN '[OK] osm_area_sqm: EPSG:6933 equal-area integer m² for polygon/multipolygon, NULL for point/line/NULL'
+        ELSE error('OSM AREA MACRO TEST FAILED!')
+    END AS area_sqm_check
+FROM mock_area_test;
+
 -- ----------------------------------------------------------------------------
 -- Part 4: POI Confidence Scoring & Operational Tag Extractions
 -- ----------------------------------------------------------------------------

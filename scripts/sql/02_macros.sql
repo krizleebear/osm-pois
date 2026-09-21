@@ -54,12 +54,25 @@ CASE
     THEN CAST(
         map(
             [k for k in osm_raw_keys(props)],
-            [json_extract_string(props, '$."' || replace(replace(k, '\', '\\'), '"', '\"') || '"') for k in osm_raw_keys(props)]
-        ) AS MAP(VARCHAR, VARCHAR)
+        [json_extract_string(props, '$."' || replace(replace(k, '\', '\\'), '"', '\"') || '"') for k in osm_raw_keys(props)]
+    ) AS MAP(VARCHAR, VARCHAR)
     )
     ELSE NULL
 END;
 
+-- Compute the metric footprint area (square meters, integer) of polygon/multipolygon POI geometries.
+-- WGS84 lon/lat GeoJSON geometries (standard [x,y]=[lon,lat] axis order used throughout this
+-- pipeline) are transformed to the global equal-area EASE-Grid 2.0 / WGS84 projection
+-- (EPSG:6933) and the planar ST_Area yields the footprint in square meters. EPSG:6933 is
+-- the single cylindrical equal-area projection bundled in the DuckDB PROJ database that is
+-- valid worldwide (including high latitudes, e.g. Nordic and Canadian extracts).
+-- Returns an INTEGER count of square meters (rounded); NULL for point / non-area geometries.
+CREATE OR REPLACE MACRO osm_area_sqm(geom) AS
+CASE 
+    WHEN geom IS NOT NULL AND ST_GeometryType(geom) IN ('POLYGON', 'MULTIPOLYGON')
+    THEN ROUND(ST_Area(ST_Transform(geom, 'EPSG:4326', 'EPSG:6933', always_xy := true)))::BIGINT
+    ELSE NULL
+END;
 
 -- Identify micro-infrastructure tags (street furniture) that should not be extracted as standalone POIs
 CREATE OR REPLACE MACRO is_micro_infrastructure(amenity) AS
