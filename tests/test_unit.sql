@@ -6,6 +6,13 @@
 --   3. Reusable DuckDB macros (Multilingual names, Micro-infrastructure, Schema)
 -- ============================================================================
 
+-- Hermetic spatial init: the macros under test (osm_area_sqm and the mock geometry
+-- fixtures) rely on ST_Transform / ST_Area / ST_GeomFromText. Production matches this
+-- via `LOAD spatial;` at the top of scripts/export_pois.sql; the unit suite must do the
+-- same so results do not depend on what a user's $HOME/.duckdbrc happens to pre-load
+-- (CI runs as root without a .duckdbrc). Idempotent: no-op if already loaded.
+LOAD spatial;
+
 -- Load modular SQL components (Single Source of Truth)
 .read scripts/sql/01_taxonomy.sql
 .read scripts/sql/02_macros.sql
