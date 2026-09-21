@@ -46,6 +46,11 @@ if [ -f "$REPO_ROOT/azure-pipelines.yml" ]; then
         echo "ERROR: azure-pipelines.yml matrix must start with austria, switzerland (got: $FIRST_TWO)"
         exit 1
     fi
+    # Ensure preflight container run mounts to /workspace, not /app (which masks container's $HOME/.duckdb extension cache)
+    if grep -E 'docker run.*-v.*: */app([[:space:]]|$)' "$REPO_ROOT/azure-pipelines.yml" >/dev/null; then
+        echo "ERROR: azure-pipelines.yml preflight must mount repository to /workspace, not /app (masks container's pre-installed .duckdb extensions)!"
+        exit 1
+    fi
     echo "=== [OK] Touchstone DE Pipeline Architecture Verified (Germany first, Matrix follows) ==="
 fi
 

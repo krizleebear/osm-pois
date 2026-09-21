@@ -119,7 +119,7 @@ stages:
           fi
 
           echo "[INFO] Executing fast-fail DuckDB unit tests in container..."
-          docker run --rm -v "$(pwd):/app" -w /app "$ACTIVE_IMAGE" ./tests/run_unit_tests.sh
+          docker run --rm -v "$(pwd):/workspace" -w /workspace "$ACTIVE_IMAGE" ./tests/run_unit_tests.sh
           echo "[OK] Preflight unit tests passed successfully."
 
     - task: Bash@3
