@@ -30,6 +30,10 @@ parameters:
   displayName: 'Specific build ID of osm-download-pbf pipeline (definition 9) or latest'
   type: string
   default: 'latest'
+- name: prefilteredBuildId
+  displayName: 'Specific build ID of osm-pois pipeline (definition 10) for pre-filtered pois.pbf or latest'
+  type: string
+  default: 'latest'
 
 pool:
   vmImage: 'ubuntu-latest'
@@ -169,6 +173,7 @@ stages:
     - template: templates/convert-steps.yml
       parameters:
         downloadBuildId: ${{ parameters.downloadBuildId }}
+        prefilteredBuildId: ${{ parameters.prefilteredBuildId }}
         skipOsmiumFilter: ${{ parameters.skipOsmiumFilter }}
 
   # -------------------------------------------------------------------------
@@ -883,6 +888,7 @@ stages:
     - template: templates/convert-steps.yml
       parameters:
         downloadBuildId: ${{ parameters.downloadBuildId }}
+        prefilteredBuildId: ${{ parameters.prefilteredBuildId }}
         skipOsmiumFilter: ${{ parameters.skipOsmiumFilter }}
 
 # ---------------------------------------------------------------------------

@@ -51,6 +51,19 @@ if [ -f "$REPO_ROOT/azure-pipelines.yml" ]; then
         echo "ERROR: azure-pipelines.yml preflight must mount repository to /workspace, not /app (masks container's pre-installed .duckdb extensions)!"
         exit 1
     fi
+    # Ensure templates/convert-steps.yml does not use buildType: 'current' (which fails when downloading pre-filtered PBFs from earlier builds)
+    if grep -q "buildType: 'current'" "$REPO_ROOT/templates/convert-steps.yml"; then
+        echo "ERROR: templates/convert-steps.yml must not use buildType: 'current' for prefiltered PBFs (must use buildType: 'specific' from definition 10)!"
+        exit 1
+    fi
+    if ! grep -q 'definition: .10.' "$REPO_ROOT/templates/convert-steps.yml"; then
+        echo "ERROR: templates/convert-steps.yml must reference definition 10 for prefiltered POI PBF artifacts!"
+        exit 1
+    fi
+    if ! grep -q 'prefilteredBuildId' "$REPO_ROOT/azure-pipelines.yml"; then
+        echo "ERROR: azure-pipelines.yml must define prefilteredBuildId parameter!"
+        exit 1
+    fi
     echo "=== [OK] Touchstone DE Pipeline Architecture Verified (Germany first, Matrix follows) ==="
 fi
 

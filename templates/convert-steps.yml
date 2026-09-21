@@ -6,6 +6,9 @@ parameters:
 - name: downloadBuildId
   type: string
   default: 'latest'
+- name: prefilteredBuildId
+  type: string
+  default: 'latest'
 - name: skipOsmiumFilter
   type: boolean
   default: false
@@ -59,15 +62,31 @@ steps:
       artifactName: 'osm-data-$(OSM_REGION)'
       targetPath: '$(System.DefaultWorkingDirectory)'
 
-# Download pre-filtered POI PBF artifact when skipOsmiumFilter is true
-- task: DownloadPipelineArtifact@2
-  enabled: true
-  displayName: 'Download pre-filtered POI PBF artifact'
-  condition: ${{ eq(parameters.skipOsmiumFilter, true) }}
-  inputs:
-    buildType: 'current'
-    artifact: 'pois-pbf-$(COUNTRY_CODE)-$(OSM_REGION)'
-    targetPath: '$(System.DefaultWorkingDirectory)'
+# Download pre-filtered POI PBF artifact from osm-pois pipeline (definition 10) when skipOsmiumFilter is true
+- ${{ if or(eq(parameters.prefilteredBuildId, 'latest'), eq(parameters.prefilteredBuildId, 'auto')) }}:
+  - task: DownloadPipelineArtifact@2
+    enabled: true
+    displayName: 'Download pre-filtered POI PBF artifact (from osm-pois pipeline - latest)'
+    condition: ${{ eq(parameters.skipOsmiumFilter, true) }}
+    inputs:
+      buildType: 'specific'
+      project: 'f85b0393-1484-487a-b6d1-5120b54a70be'
+      definition: '10'
+      buildVersionToDownload: 'latest'
+      artifactName: 'pois-pbf-$(COUNTRY_CODE)-$(OSM_REGION)'
+      targetPath: '$(System.DefaultWorkingDirectory)'
+- ${{ if not(or(eq(parameters.prefilteredBuildId, 'latest'), eq(parameters.prefilteredBuildId, 'auto'))) }}:
+  - task: DownloadPipelineArtifact@2
+    enabled: true
+    displayName: 'Download pre-filtered POI PBF artifact (from osm-pois pipeline - build ${{ parameters.prefilteredBuildId }})'
+    condition: ${{ eq(parameters.skipOsmiumFilter, true) }}
+    inputs:
+      buildType: 'specific'
+      project: 'f85b0393-1484-487a-b6d1-5120b54a70be'
+      pipeline: '10'
+      buildId: '${{ parameters.prefilteredBuildId }}'
+      artifactName: 'pois-pbf-$(COUNTRY_CODE)-$(OSM_REGION)'
+      targetPath: '$(System.DefaultWorkingDirectory)'
 
 - task: Bash@3
   enabled: true
@@ -114,12 +133,18 @@ steps:
         rm -rf "osm-data-$(OSM_REGION)" "$(OSM_REGION).osm.pbf"
       else
         echo "[INFO] Skipping Osmium filter stage (using pre-filtered POI PBF artifact)."
+        FOUND_FILTERED_PBF=$(find . -name "$FILTERED_PBF" 2>/dev/null | head -n 1)
+        if [ -n "$FOUND_FILTERED_PBF" ] && [ -f "$FOUND_FILTERED_PBF" ]; then
+          FILTERED_PBF="$FOUND_FILTERED_PBF"
+        fi
+
         if [ ! -f "$FILTERED_PBF" ]; then
           echo "****************************************************************"
           echo " ERROR: Pre-filtered PBF file '$FILTERED_PBF' not found!"
           echo "****************************************************************"
           exit 1
         fi
+        echo "[INFO] Found pre-filtered POI PBF: $FILTERED_PBF"
       fi
 
       echo "[INFO] Converting filtered PBF to GeoParquet via DuckDB..."
