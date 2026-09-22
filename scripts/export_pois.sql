@@ -18,6 +18,115 @@ SET VARIABLE repo_root = '__REPO_ROOT__';
 .read __REPO_ROOT__/scripts/sql/02_macros.sql
 .read __REPO_ROOT__/scripts/sql/03_categorization.sql
 .read __REPO_ROOT__/scripts/sql/04_confidence.sql
+.read __REPO_ROOT__/scripts/sql/05_relations.sql
+
+-- Build Inverted Relation Membership Index from extracted OPL relations stream
+CREATE TEMP TABLE IF NOT EXISTS raw_rel_lines AS 
+SELECT col0 AS line 
+FROM read_csv('__INPUT_RELATIONS_OPL__', columns={'col0': 'VARCHAR'}, quote='', escape='', delim='\n', auto_detect=false);
+
+CREATE TEMP TABLE IF NOT EXISTS osm_relation_members AS
+WITH parsed_rels AS (
+    SELECT 
+        'osm:relation/' || regexp_extract(line, '^r([0-9]+)', 1) AS relation_id,
+        regexp_extract(line, ' T([^ ]*)', 1) AS raw_tags,
+        regexp_extract(line, ' M([^ ]*)', 1) AS raw_members
+    FROM raw_rel_lines
+    WHERE line LIKE 'r%'
+),
+tag_split AS (
+    SELECT 
+        relation_id,
+        raw_members,
+        regexp_extract(raw_tags, '(^|,)type=([^,]*)', 2) AS relation_type,
+        regexp_extract(raw_tags, '(^|,)site=([^,]*)', 2) AS site_type,
+        regexp_extract(raw_tags, '(^|,)name=([^,]*)', 2) AS rel_name
+    FROM parsed_rels
+),
+members_expanded AS (
+    SELECT 
+        relation_id,
+        relation_type,
+        site_type,
+        rel_name,
+        unnest(string_split(raw_members, ',')) AS member_str
+    FROM tag_split
+    WHERE raw_members != ''
+),
+member_parsed AS (
+    SELECT 
+        relation_id,
+        relation_type,
+        site_type,
+        rel_name,
+        'osm:' || CASE WHEN substring(member_str, 1, 1) = 'n' THEN 'node'
+                       WHEN substring(member_str, 1, 1) = 'w' THEN 'way'
+                       ELSE 'relation' END
+               || '/' || regexp_extract(member_str, '^[nwr]([0-9]+)', 1) AS member_id,
+        split_part(member_str, '@', 2) AS member_role
+    FROM members_expanded
+    WHERE member_str != ''
+),
+parent_candidates AS (
+    SELECT 
+        relation_id,
+        member_id AS candidate_parent_id,
+        ROW_NUMBER() OVER (
+            PARTITION BY relation_id 
+            ORDER BY 
+                CASE 
+                    WHEN member_role IN ('parking', 'perimeter', 'outer', 'building', 'site') THEN 1
+                    WHEN member_id LIKE 'osm:way/%' OR member_id LIKE 'osm:relation/%' THEN 2
+                    ELSE 3
+                END,
+                member_id
+        ) AS rank
+    FROM member_parsed
+    WHERE member_role NOT IN ('entrance', 'exit', 'entry', 'access')
+),
+primary_parent AS (
+    SELECT relation_id, candidate_parent_id 
+    FROM parent_candidates 
+    WHERE rank = 1
+),
+ranked_members AS (
+    SELECT 
+        m.member_id,
+        m.relation_id,
+        m.member_role,
+        CASE 
+            WHEN m.member_id = p.candidate_parent_id THEN NULL
+            ELSE p.candidate_parent_id 
+        END AS parent_osm_id,
+        CASE 
+            WHEN m.member_id != p.candidate_parent_id AND p.candidate_parent_id IS NOT NULL 
+            THEN COALESCE(NULLIF(m.site_type, ''), NULLIF(m.relation_type, ''))
+            ELSE NULL 
+        END AS parent_feature_kind,
+        ROW_NUMBER() OVER (
+            PARTITION BY m.member_id
+            ORDER BY 
+                CASE 
+                    WHEN m.relation_type = 'parking' OR m.site_type = 'parking' THEN 1
+                    WHEN m.relation_type = 'site' THEN 2
+                    WHEN m.relation_type = 'building' THEN 3
+                    WHEN m.relation_type = 'associatedStreet' THEN 4
+                    WHEN m.relation_type = 'cluster' THEN 5
+                    ELSE 6
+                END,
+                m.relation_id
+        ) AS rel_rank
+    FROM member_parsed m
+    LEFT JOIN primary_parent p ON m.relation_id = p.relation_id
+)
+SELECT 
+    member_id,
+    relation_id,
+    member_role,
+    parent_osm_id,
+    parent_feature_kind
+FROM ranked_members
+WHERE rel_rank = 1;
 
 -- Stream Osmium GeoJSON directly into Overture Places GeoParquet (Zero Intermediate Materialization)
 COPY (
@@ -59,6 +168,7 @@ COPY (
             json_extract_string(properties, '$.shop') AS shop,
             json_extract_string(properties, '$.tourism') AS tourism,
             json_extract_string(properties, '$.information') AS information,
+            json_extract_string(properties, '$.entrance') AS entrance,
             json_extract_string(properties, '$.leisure') AS leisure,
             json_extract_string(properties, '$.office') AS office,
             json_extract_string(properties, '$.craft') AS craft,
@@ -137,6 +247,17 @@ COPY (
                 c.cuisine, c.sport
             ) AS alternate_categories
         FROM categorized c
+    ),
+    with_relations AS (
+        SELECT 
+            c.*,
+            rel.relation_id,
+            rel.member_role,
+            rel.parent_osm_id,
+            rel.parent_feature_kind,
+            resolve_access_type(c.amenity, c.entrance, c.railway, rel.member_role, rel.parent_feature_kind) AS access_type
+        FROM with_alternates c
+        LEFT JOIN osm_relation_members rel ON c.id = rel.member_id
     )
     SELECT
         id,
@@ -199,8 +320,14 @@ COPY (
         delivery,
         takeaway,
         area_m2,
-        tags
-    FROM with_alternates c
+        tags,
+        -- Parent & Relation Membership Attributes (Superset Extension)
+        parent_osm_id,
+        parent_feature_kind,
+        relation_id,
+        member_role,
+        access_type
+    FROM with_relations c
     WHERE 1=1 __SPATIAL_FILTER__
 ) TO '__OUTPUT_PARQUET__' (
     FORMAT PARQUET, 

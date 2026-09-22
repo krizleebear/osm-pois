@@ -127,7 +127,17 @@ SELECT
     count(CASE WHEN id LIKE 'osm:way/%' AND area_m2 IS NOT NULL AND area_m2 > 0 THEN 1 END),
     count(CASE WHEN id LIKE 'osm:node/%' THEN 1 END),
     count(CASE WHEN id LIKE 'osm:node/%' AND area_m2 IS NULL THEN 1 END),
-    count(CASE WHEN id LIKE 'osm:relation/%' AND area_m2 IS NOT NULL AND area_m2 > 0 THEN 1 END)
+    count(CASE WHEN id LIKE 'osm:relation/%' AND area_m2 IS NOT NULL AND area_m2 > 0 THEN 1 END),
+    count(CASE WHEN typeof(parent_osm_id) = 'VARCHAR' THEN 1 END),
+    count(CASE WHEN typeof(parent_feature_kind) = 'VARCHAR' THEN 1 END),
+    count(CASE WHEN typeof(relation_id) = 'VARCHAR' THEN 1 END),
+    count(CASE WHEN typeof(member_role) = 'VARCHAR' THEN 1 END),
+    count(CASE WHEN typeof(access_type) = 'VARCHAR' THEN 1 END),
+    count(CASE WHEN relation_id IS NOT NULL THEN 1 END),
+    count(CASE WHEN parent_osm_id IS NOT NULL THEN 1 END),
+    count(CASE WHEN access_type IS NOT NULL THEN 1 END),
+    count(CASE WHEN parent_feature_kind = 'parking' THEN 1 END),
+    count(CASE WHEN access_type = 'parking' THEN 1 END)
 FROM '$OUTPUT_PARQUET';
 ")
 
@@ -162,6 +172,16 @@ NODE_COUNT=$(echo "$SCHEMA_CHECK" | cut -d',' -f28)
 NODES_WITHOUT_AREA=$(echo "$SCHEMA_CHECK" | cut -d',' -f29)
 RELS_WITH_AREA=$(echo "$SCHEMA_CHECK" | cut -d',' -f30)
 REL_COUNT=$RELS_WITH_AREA
+VALID_PARENT_OSM_ID_TYPE=$(echo "$SCHEMA_CHECK" | cut -d',' -f31)
+VALID_PARENT_KIND_TYPE=$(echo "$SCHEMA_CHECK" | cut -d',' -f32)
+VALID_RELATION_ID_TYPE=$(echo "$SCHEMA_CHECK" | cut -d',' -f33)
+VALID_ROLE_TYPE=$(echo "$SCHEMA_CHECK" | cut -d',' -f34)
+VALID_ACCESS_TYPE_TYPE=$(echo "$SCHEMA_CHECK" | cut -d',' -f35)
+WITH_RELATION_ID=$(echo "$SCHEMA_CHECK" | cut -d',' -f36)
+WITH_PARENT_OSM_ID=$(echo "$SCHEMA_CHECK" | cut -d',' -f37)
+WITH_ACCESS_TYPE=$(echo "$SCHEMA_CHECK" | cut -d',' -f38)
+WITH_PARKING_PARENT=$(echo "$SCHEMA_CHECK" | cut -d',' -f39)
+WITH_PARKING_ACCESS=$(echo "$SCHEMA_CHECK" | cut -d',' -f40)
 
 if [ "$VALID_NAMES_RULES" -ne "$TOTAL_COUNT" ] || [ "$VALID_BRAND_RULES" -ne "$TOTAL_COUNT" ]; then
     echo "[FAIL] Expected rules columns to be typed as STRUCT[], got names.rules=$VALID_NAMES_RULES, brand.names.rules=$VALID_BRAND_RULES"
@@ -253,6 +273,32 @@ if [ "$WITH_AREA_COUNT" -ne $(( WAYS_WITH_AREA + RELS_WITH_AREA )) ]; then
 fi
 if [ "$ALL_AREA_BIGINT" -ne "$WITH_AREA_COUNT" ]; then
     echo "[FAIL] Expected every area_m2 value to be typed BIGINT (integer m²), got $ALL_AREA_BIGINT of $WITH_AREA_COUNT area values"
+    exit 1
+fi
+
+# Parent and Relation Membership Attributes Assertions
+if [ "$VALID_PARENT_OSM_ID_TYPE" -ne "$TOTAL_COUNT" ] || [ "$VALID_PARENT_KIND_TYPE" -ne "$TOTAL_COUNT" ] || [ "$VALID_RELATION_ID_TYPE" -ne "$TOTAL_COUNT" ] || [ "$VALID_ROLE_TYPE" -ne "$TOTAL_COUNT" ] || [ "$VALID_ACCESS_TYPE_TYPE" -ne "$TOTAL_COUNT" ]; then
+    echo "[FAIL] Relation attribute type verification failed (parent_osm_id=$VALID_PARENT_OSM_ID_TYPE, parent_kind=$VALID_PARENT_KIND_TYPE, relation_id=$VALID_RELATION_ID_TYPE, role=$VALID_ROLE_TYPE, access_type=$VALID_ACCESS_TYPE_TYPE)"
+    exit 1
+fi
+if [ "$WITH_RELATION_ID" -lt 5 ]; then
+    echo "[FAIL] Expected at least 5 POIs with relation_id in Monaco, got $WITH_RELATION_ID"
+    exit 1
+fi
+if [ "$WITH_PARENT_OSM_ID" -lt 5 ]; then
+    echo "[FAIL] Expected at least 5 POIs with parent_osm_id in Monaco, got $WITH_PARENT_OSM_ID"
+    exit 1
+fi
+if [ "$WITH_ACCESS_TYPE" -lt 10 ]; then
+    echo "[FAIL] Expected at least 10 POIs with access_type in Monaco, got $WITH_ACCESS_TYPE"
+    exit 1
+fi
+if [ "$WITH_PARKING_PARENT" -lt 2 ]; then
+    echo "[FAIL] Expected at least 2 POIs with parent_feature_kind='parking' in Monaco, got $WITH_PARKING_PARENT"
+    exit 1
+fi
+if [ "$WITH_PARKING_ACCESS" -lt 2 ]; then
+    echo "[FAIL] Expected at least 2 POIs with access_type='parking' in Monaco, got $WITH_PARKING_ACCESS"
     exit 1
 fi
 

@@ -18,6 +18,7 @@ LOAD spatial;
 .read scripts/sql/02_macros.sql
 .read scripts/sql/03_categorization.sql
 .read scripts/sql/04_confidence.sql
+.read scripts/sql/05_relations.sql
 
 -- ----------------------------------------------------------------------------
 -- Part 1: Taxonomy & Mapping Integrity Checks
@@ -553,4 +554,34 @@ SELECT
         ELSE error('RAW TAGS EXTRACTION TEST FAILED!')
     END AS raw_tags_check
 FROM mock_raw_tags_test;
+
+-- Check 4.4: Access Type and Parent Relation Resolution (resolve_access_type)
+CREATE TEMP TABLE mock_access_type_test AS
+SELECT 
+    resolve_access_type('parking_entrance', NULL, NULL, NULL, NULL) AS t_parking_entrance,
+    resolve_access_type(NULL, NULL, 'subway_entrance', NULL, NULL) AS t_subway_entrance,
+    resolve_access_type(NULL, 'main', NULL, NULL, NULL) AS t_entrance_main,
+    resolve_access_type(NULL, 'delivery', NULL, NULL, NULL) AS t_entrance_delivery,
+    resolve_access_type(NULL, 'emergency', NULL, NULL, NULL) AS t_entrance_emergency,
+    resolve_access_type(NULL, NULL, NULL, 'entrance', 'parking') AS t_rel_parking_entrance,
+    resolve_access_type(NULL, NULL, NULL, 'exit', 'parking') AS t_rel_parking_exit,
+    resolve_access_type(NULL, NULL, NULL, 'entrance', 'hospital') AS t_rel_generic_access,
+    resolve_access_type('restaurant', NULL, NULL, NULL, NULL) AS t_restaurant;
+
+SELECT 
+    CASE 
+        WHEN t_parking_entrance = 'parking'
+         AND t_subway_entrance = 'transit'
+         AND t_entrance_main = 'pedestrian'
+         AND t_entrance_delivery = 'delivery'
+         AND t_entrance_emergency = 'emergency'
+         AND t_rel_parking_entrance = 'parking'
+         AND t_rel_parking_exit = 'parking'
+         AND t_rel_generic_access = 'access'
+         AND t_restaurant IS NULL
+        THEN '[OK] Access type resolution test passed: parking, transit, pedestrian, delivery, emergency, and relation-derived access points resolved'
+        ELSE error('ACCESS TYPE RESOLUTION TEST FAILED!')
+    END AS access_type_check
+FROM mock_access_type_test;
+
 

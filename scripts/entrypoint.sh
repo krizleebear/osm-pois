@@ -250,12 +250,17 @@ monitor_resources() {
 BUILD_VERSION="${BUILD_VERSION:-${BUILD_BUILDNUMBER:-${BUILD_NUMBER:-$(git describe --tags --always 2>/dev/null || echo "dev")}}}"
 EXPORT_TIMESTAMP="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
 
-echo "[STAGE 1/3] Streaming Osmium export through named pipe directly into DuckDB..."
+TMP_RELS_OPL="${TMP_DIR}/relations.opl"
+echo "[STAGE 1/4] Pre-filtering relations into lightweight OPL index..."
+osmium tags-filter -R "$INPUT_PBF" r/type=site,parking,building,associatedStreet,cluster -f opl -o "$TMP_RELS_OPL" --overwrite 2>/dev/null || touch "$TMP_RELS_OPL"
+
+echo "[STAGE 2/4] Streaming Osmium export through named pipe directly into DuckDB..."
 (set -o pipefail; osmium export "$INPUT_PBF" -i "sparse_file_array,${TMP_DIR}/osmium_idx.tmp" --geometry-types=point,polygon --attributes=type,id,version,timestamp --output-format=geojsonseq | tr -d '\036' > "$TMP_FIFO") &
 OSMIUM_PID=$!
 
 sed \
   -e "s|__INPUT_JSONL__|${TMP_FIFO}|g" \
+  -e "s|__INPUT_RELATIONS_OPL__|${TMP_RELS_OPL}|g" \
   -e "s|__OUTPUT_PARQUET__|${OUTPUT_PARQUET}|g" \
   -e "s|__COUNTRY_CODE__|${COUNTRY_CODE}|g" \
   -e "s|__REPO_ROOT__|${REPO_ROOT}|g" \
@@ -305,8 +310,8 @@ if [ $OSMIUM_EXIT -ne 0 ]; then
     exit $OSMIUM_EXIT
 fi
 
-echo "[STAGE 2/3] Stream conversion completed successfully."
-echo "[STAGE 3/3] Validating GeoParquet output..."
+echo "[STAGE 3/4] Stream conversion completed successfully."
+echo "[STAGE 4/4] Validating GeoParquet output..."
 
 END_TIME=$(date +%s)
 ELAPSED=$((END_TIME - START_TIME))
