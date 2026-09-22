@@ -252,7 +252,7 @@ EXPORT_TIMESTAMP="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
 
 TMP_RELS_OPL="${TMP_DIR}/relations.opl"
 echo "[STAGE 1/4] Pre-filtering relations into lightweight OPL index..."
-osmium tags-filter -R "$INPUT_PBF" r/type=site,parking,building,associatedStreet,cluster -f opl -o "$TMP_RELS_OPL" --overwrite 2>/dev/null || touch "$TMP_RELS_OPL"
+osmium tags-filter -R "$INPUT_PBF" r/type=site,parking -f opl -o "$TMP_RELS_OPL" --overwrite 2>/dev/null || touch "$TMP_RELS_OPL"
 
 echo "[STAGE 2/4] Streaming Osmium export through named pipe directly into DuckDB..."
 (set -o pipefail; osmium export "$INPUT_PBF" -i "sparse_file_array,${TMP_DIR}/osmium_idx.tmp" --geometry-types=point,polygon --attributes=type,id,version,timestamp --output-format=geojsonseq | tr -d '\036' > "$TMP_FIFO") &

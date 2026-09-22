@@ -102,7 +102,7 @@ When modifying or generating code in this repository, you **MUST** follow these 
     * Serves as an open escape hatch for downstream consumers (e.g. EV socket types, capacity, payment apps) without requiring schema adjustments or lossy upstream normalization.
 12. **Parent & Relation Membership Attributes (`parent_osm_id`, `parent_feature_kind`, `relation_id`, `member_role`, `access_type`)**:
     * A non-breaking relational superset block is appended to `places.parquet` to represent OSM relation memberships and access topologies without requiring fragile spatial nearest-neighbor joins downstream.
-    * Relations matching `type IN ('site', 'parking', 'building', 'associatedStreet', 'cluster')` are pre-filtered via `osmium tags-filter` into an in-memory OPL index and joined deterministically (prioritizing `parking` > `site` > `building` > `associatedStreet` > `cluster`).
+    * Relations matching `type IN ('site', 'parking')` are pre-filtered via `osmium tags-filter` into an in-memory OPL index and joined deterministically (prioritizing `parking` > `site`).
     * `relation_id`: ID of the parent relation (e.g. `'osm:relation/4109468'`).
     * `member_role`: Role of the member feature within that relation (e.g. `'entrance'`, `'exit'`, `'parking'`, `'perimeter'`, `'outer'`).
     * `parent_osm_id`: Primary POI member of the relation (e.g. the parking area `'osm:way/307701132'`), evaluated distinctly from child access points.
