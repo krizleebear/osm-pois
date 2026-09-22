@@ -27,14 +27,18 @@ else
     echo "=== [OK] Unit Tests Completed in ${ELAPSED}s ==="
 fi
 
-# Verify Azure Pipelines Touchstone DE architecture
+# Verify Azure Pipelines Touchstone DE + US architecture
 if [ -f "$REPO_ROOT/azure-pipelines.yml" ]; then
     if ! grep -q 'job: touchstone_germany' "$REPO_ROOT/azure-pipelines.yml"; then
         echo "ERROR: azure-pipelines.yml must define job: touchstone_germany!"
         exit 1
     fi
+    if ! grep -q 'job: touchstone_us' "$REPO_ROOT/azure-pipelines.yml"; then
+        echo "ERROR: azure-pipelines.yml must define job: touchstone_us!"
+        exit 1
+    fi
     if ! grep -q 'dependsOn: touchstone_germany' "$REPO_ROOT/azure-pipelines.yml"; then
-        echo "ERROR: azure-pipelines.yml convert job must have dependsOn: touchstone_germany!"
+        echo "ERROR: azure-pipelines.yml touchstone_us must have dependsOn: touchstone_germany!"
         exit 1
     fi
     if [ ! -f "$REPO_ROOT/templates/convert-steps.yml" ]; then
@@ -44,6 +48,10 @@ if [ -f "$REPO_ROOT/azure-pipelines.yml" ]; then
     FIRST_TWO=$(sed -n '/strategy:/,/steps:/p' "$REPO_ROOT/azure-pipelines.yml" | grep -E '^[[:space:]]{8}[a-z0-9_-]+:' | head -n 2 | awk '{print $1}' | tr -d ':' | tr '\n' ' ')
     if [ "$FIRST_TWO" != "austria switzerland " ]; then
         echo "ERROR: azure-pipelines.yml matrix must start with austria, switzerland (got: $FIRST_TWO)"
+        exit 1
+    fi
+    if sed -n '/strategy:/,/steps:/p' "$REPO_ROOT/azure-pipelines.yml" | grep -E '^[[:space:]]{8}us:' >/dev/null; then
+        echo "ERROR: us must be in dedicated job: touchstone_us, not in convert matrix!"
         exit 1
     fi
     # Ensure preflight container run mounts to /workspace, not /app (which masks container's $HOME/.duckdb extension cache)

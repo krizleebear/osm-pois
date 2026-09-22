@@ -177,11 +177,35 @@ stages:
         skipOsmiumFilter: ${{ parameters.skipOsmiumFilter }}
 
   # -------------------------------------------------------------------------
-  # Job 2: Convert remaining regions (parallel matrix, starts after Touchstone)
+  # Job 2: Touchstone Build for United States (US) - runs after DE
+  # -------------------------------------------------------------------------
+  - job: touchstone_us
+    displayName: 'PBF -> Parquet US (Touchstone)'
+    dependsOn: touchstone_germany
+    condition: succeededOrFailed()
+    timeoutInMinutes: 360
+    workspace:
+      clean: all
+    container: osm2parquet
+    variables:
+      OSM_REGION: 'us'
+      PBF_URL: 'https://download.geofabrik.de/north-america/us-latest.osm.pbf'
+      COUNTRY_CODE: 'US'
+    steps:
+    - template: templates/convert-steps.yml
+      parameters:
+        downloadBuildId: ${{ parameters.downloadBuildId }}
+        prefilteredBuildId: ${{ parameters.prefilteredBuildId }}
+        skipOsmiumFilter: ${{ parameters.skipOsmiumFilter }}
+
+  # -------------------------------------------------------------------------
+  # Job 3: Convert remaining regions (parallel matrix, starts after Touchstones)
   # -------------------------------------------------------------------------
   - job: convert
     displayName: 'PBF -> Parquet'
-    dependsOn: touchstone_germany
+    dependsOn:
+    - touchstone_germany
+    - touchstone_us
     condition: succeededOrFailed()
     timeoutInMinutes: 360
     workspace:
@@ -831,10 +855,6 @@ stages:
           OSM_REGION: 'mexico'
           PBF_URL: 'https://download.geofabrik.de/north-america/mexico-latest.osm.pbf'
           COUNTRY_CODE: 'MX'
-        us:
-          OSM_REGION: 'us'
-          PBF_URL: 'https://download.geofabrik.de/north-america/us-latest.osm.pbf'
-          COUNTRY_CODE: 'US'
         argentina:
           OSM_REGION: 'argentina'
           PBF_URL: 'https://download.geofabrik.de/south-america/argentina-latest.osm.pbf'
