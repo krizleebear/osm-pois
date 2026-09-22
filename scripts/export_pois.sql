@@ -27,7 +27,7 @@ COPY (
             properties
         FROM read_json('__INPUT_JSONL__', 
                        format='newline_delimited', 
-                       maximum_object_size=33554432,
+                       maximum_object_size=268435456,
                        columns={'geometry': 'JSON', 'properties': 'JSON'})
         WHERE is_poi_candidate(properties)
           AND geometry IS NOT NULL

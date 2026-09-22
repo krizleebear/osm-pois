@@ -219,7 +219,7 @@ To ensure consistent pipeline execution, reproducible releases, and clean Git wo
     - **Disk-Backed Osmium Node Cache (`-i sparse_file_array`)**:
       For large country extracts, `osmium export` default `-i flex_mem` keeps all node coordinates uncompressed in memory (e.g. 1.6+ GB RAM for US 84M nodes). Always specify a disk-backed node cache index `-i "sparse_file_array,${TMP_DIR}/osmium_idx.tmp"` in `scripts/entrypoint.sh` to keep Osmium process memory strictly bounded (< 800 MB).
     - **Multipolygon Buffer Overhead (`maximum_object_size`)**:
-      Massive boundary features (such as national parks or nature reserves) can produce single GeoJSON feature strings exceeding 16 MB. In DuckDB `read_json()`, always configure `maximum_object_size=33554432` (32 MB) to prevent buffer overflow exceptions.
+      Massive boundary features (such as national parks or nature reserves in large country extracts like the US) can produce single GeoJSON feature strings exceeding 32 MB (up to ~38+ MB). In DuckDB `read_json()`, always configure `maximum_object_size=268435456` (256 MB) to prevent buffer overflow exceptions.
     - **Bounded Execution Concurrency & Parquet Flushing**:
       In memory-constrained CI/CD runners (7.0 GB limit), multi-threaded streaming multiplies JSON string parser buffers. Keep `SET threads = 1` during streaming ingestion, disable order preservation (`SET preserve_insertion_order = false`), and configure aggressive Parquet row group memory bounds (`SET write_buffer_row_group_count = 1; SET write_buffer_row_group_memory_limit = '128MB';`).
 

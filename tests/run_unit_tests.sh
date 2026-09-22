@@ -64,7 +64,13 @@ if [ -f "$REPO_ROOT/azure-pipelines.yml" ]; then
         echo "ERROR: azure-pipelines.yml must define prefilteredBuildId parameter!"
         exit 1
     fi
-    echo "=== [OK] Touchstone DE Pipeline Architecture Verified (Germany first, Matrix follows) ==="
+    # Ensure export_pois.sql configures maximum_object_size >= 256 MB (268435456 bytes) to handle massive features (e.g. US)
+    MAX_OBJ_SIZE=$(grep -oE 'maximum_object_size=[0-9]+' "$REPO_ROOT/scripts/export_pois.sql" | cut -d'=' -f2)
+    if [ -z "$MAX_OBJ_SIZE" ] || [ "$MAX_OBJ_SIZE" -lt 268435456 ]; then
+        echo "ERROR: scripts/export_pois.sql must configure maximum_object_size >= 268435456 (256 MB) to prevent buffer overflow on large country extracts like US!"
+        exit 1
+    fi
+    echo "=== [OK] Touchstone DE Pipeline Architecture & Buffer Limits Verified ==="
 fi
 
 # Verify Web Viewer Contract Integrity
