@@ -18,21 +18,32 @@ steps:
 
 - task: Bash@3
   target: host
-  displayName: 'Reclaim runner host disk space'
+  displayName: 'Reclaim runner host disk space (heavyweight regions)'
   inputs:
     targetType: 'inline'
     script: |
-      echo "[INFO] Disk space before cleanup:"
-      df -h /
-      sudo rm -rf \
-        /usr/share/dotnet \
-        /usr/local/lib/android \
-        /opt/ghc \
-        /usr/local/share/boost \
-        /opt/hostedtoolcache \
-        2>/dev/null || true
-      echo "[INFO] Disk space after cleanup:"
-      df -h /
+      # Reclaiming disk space takes ~2 minutes. Only execute for heavyweight regions
+      # (US, DE, FR, RU, BR, CA) that exceed the standard 14 GB runner disk headroom.
+      case "$(COUNTRY_CODE)" in
+        US|DE|FR|RU|BR|CA)
+          echo "[INFO] Heavyweight region '$(COUNTRY_CODE)' detected. Reclaiming host disk space..."
+          echo "[INFO] Disk space before cleanup:"
+          df -h /
+          sudo rm -rf \
+            /usr/share/dotnet \
+            /usr/local/lib/android \
+            /opt/ghc \
+            /usr/local/share/boost \
+            /opt/hostedtoolcache \
+            2>/dev/null || true
+          echo "[INFO] Disk space after cleanup:"
+          df -h /
+          ;;
+        *)
+          echo "[INFO] Region '$(COUNTRY_CODE)' is within standard 14 GB runner headroom. Skipping host disk reclaim (saves ~2 minutes)."
+          df -h /
+          ;;
+      esac
 
 # Download cached PBF from the osm-download pipeline (definition 9: krizleebear.osm-download-pbf).
 # Never fetch directly from Geofabrik here — that is the download pipeline's job.
@@ -127,7 +138,7 @@ steps:
 
         echo "[INFO] Found input PBF: $INPUT_PBF"
         echo "[INFO] Filtering POI features (amenity, shop, tourism, leisure, etc.) via osmium..."
-        osmium tags-filter "$INPUT_PBF" nwr/amenity nwr/shop nwr/tourism nwr/leisure nwr/office nwr/craft nwr/healthcare nwr/historic nwr/aeroway nwr/highway=rest_area,services nwr/cuisine nwr/railway=station,halt nwr/building=church,cathedral,chapel,mosque,synagogue,temple nwr/emergency=defibrillator nwr/man_made r/type=site,parking,building --output="$FILTERED_PBF" --overwrite
+        osmium tags-filter "$INPUT_PBF" nwr/amenity nwr/shop nwr/tourism nwr/leisure nwr/office nwr/craft nwr/healthcare nwr/historic nwr/aeroway nwr/highway=rest_area,services nwr/cuisine nwr/railway=station,halt nwr/building=church,cathedral,chapel,mosque,synagogue,temple nwr/emergency=defibrillator nwr/man_made r/type=site,parking --output="$FILTERED_PBF" --overwrite
 
         echo "[INFO] Reclaiming disk space: removing raw input PBF immediately..."
         rm -rf "osm-data-$(OSM_REGION)" "$(OSM_REGION).osm.pbf"
