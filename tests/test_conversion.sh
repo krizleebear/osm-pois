@@ -137,7 +137,10 @@ SELECT
     count(CASE WHEN parent_osm_id IS NOT NULL THEN 1 END),
     count(CASE WHEN access_type IS NOT NULL THEN 1 END),
     count(CASE WHEN parent_feature_kind = 'parking' THEN 1 END),
-    count(CASE WHEN access_type = 'parking' THEN 1 END)
+    count(CASE WHEN access_type = 'parking' THEN 1 END),
+    count(CASE WHEN typeof(operating_status) = 'VARCHAR' AND operating_status IN ('active', 'temporarily_unavailable') THEN 1 END),
+    count(CASE WHEN typeof(lifecycle_state) = 'VARCHAR' THEN 1 END),
+    count(CASE WHEN typeof(navigation_relevant) = 'BOOLEAN' THEN 1 END)
 FROM '$OUTPUT_PARQUET';
 ")
 
@@ -219,6 +222,11 @@ if [ "$DISTINCT_CONF_COUNT" -lt 10 ]; then
 fi
 
 # Superset Operational Attributes Schema Assertions
+VALID_OP_STATUS_COUNT=$(echo "$SCHEMA_CHECK" | cut -d',' -f41)
+if [ "$VALID_OP_STATUS_COUNT" -ne "$TOTAL_COUNT" ]; then
+    echo "[FAIL] Expected all POIs to have valid operating_status ('active' or 'temporarily_unavailable'), got $VALID_OP_STATUS_COUNT / $TOTAL_COUNT"
+    exit 1
+fi
 if [ "$VALID_HOURS_TYPE" -ne "$TOTAL_COUNT" ] || [ "$VALID_WHEEL_TYPE" -ne "$TOTAL_COUNT" ] || [ "$VALID_PAY_TYPE" -ne "$TOTAL_COUNT" ] || [ "$VALID_LEVEL_TYPE" -ne "$TOTAL_COUNT" ] || [ "$VALID_DELIV_TYPE" -ne "$TOTAL_COUNT" ] || [ "$VALID_TAKE_TYPE" -ne "$TOTAL_COUNT" ] || [ "$VALID_REF_TYPE" -ne "$TOTAL_COUNT" ]; then
     echo "[FAIL] Superset attribute type verification failed (hours=$VALID_HOURS_TYPE, wheel=$VALID_WHEEL_TYPE, pay=$VALID_PAY_TYPE, level=$VALID_LEVEL_TYPE, deliv=$VALID_DELIV_TYPE, take=$VALID_TAKE_TYPE, ref=$VALID_REF_TYPE)"
     exit 1

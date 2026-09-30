@@ -93,61 +93,170 @@ OR leisure = 'playground'
 OR emergency = 'defibrillator'
 OR list_contains(['rest_area', 'services'], highway);
 
--- Primary filter: determines whether an OSM feature qualifies as a POI candidate
-CREATE OR REPLACE MACRO is_poi_candidate(props) AS
+-- Identify temporarily closed or under-renovation landmarks with high navigation relevance (Issue #1)
+CREATE OR REPLACE MACRO is_temporary_closed_landmark(props, is_area := FALSE) AS
 COALESCE(
+    -- 1. Must NOT be permanently destroyed, razed, removed or abandoned
     (
-        json_extract_string(props, '$.name') IS NOT NULL 
-        OR json_extract_string(props, '$.brand') IS NOT NULL 
-        OR (
-            json_extract_string(props, '$.operator') IS NOT NULL 
-            AND json_extract_string(props, '$.man_made') IS NULL
-        )
-        OR is_utility_infrastructure(
+        COALESCE(json_extract_string(props, '$.abandoned'), 'no') NOT IN ('yes')
+        AND json_extract_string(props, '$.end_date') IS NULL
+        AND json_extract_string(props, '$.ruins') IS NULL
+        AND len([k for k in json_keys(props) if k LIKE 'demolished:%' OR k LIKE 'razed:%' OR k LIKE 'removed:%' OR k LIKE 'abandoned:%' OR k LIKE 'was:%']) = 0
+    )
+    -- 2. Must possess stable identity: readable name + at least 1 verified identity attribute
+    AND json_extract_string(props, '$.name') IS NOT NULL
+    AND (
+        json_extract_string(props, '$.wikidata') IS NOT NULL
+        OR json_extract_string(props, '$.wikipedia') IS NOT NULL
+        OR json_extract_string(props, '$.operator') IS NOT NULL
+        OR json_extract_string(props, '$.brand') IS NOT NULL
+        OR json_extract_string(props, '$.addr:street') IS NOT NULL
+        OR json_extract_string(props, '$.addr:postcode') IS NOT NULL
+        OR json_extract_string(props, '$.addr:city') IS NOT NULL
+    )
+    -- 3. Must be a main facility / structural anchor rather than a detached point or subunit
+    AND (
+        is_area
+        OR json_extract_string(props, '$.building') IS NOT NULL
+        OR json_extract_string(props, '$.@type') IN ('way', 'relation')
+    )
+    -- 4. Must belong to a strictly bounded navigation-relevant landmark category
+    AND (
+        list_contains([
+            'theatre', 'theater', 'museum', 'hospital', 'university', 'college', 'stadium',
+            'sports_centre', 'arts_centre', 'library', 'townhall', 'courthouse', 'concert_hall',
+            'opera_house', 'planetarium', 'convention_center', 'ferry_terminal'
+        ], COALESCE(
             json_extract_string(props, '$.amenity'),
+            json_extract_string(props, '$."disused:amenity"'),
+            json_extract_string(props, '$."construction:amenity"')
+        ))
+        OR list_contains([
+            'theme_park', 'zoo', 'aquarium'
+        ], COALESCE(
+            json_extract_string(props, '$.tourism'),
+            json_extract_string(props, '$."disused:tourism"'),
+            json_extract_string(props, '$."construction:tourism"')
+        ))
+        OR list_contains([
+            'stadium', 'sports_centre', 'water_park'
+        ], COALESCE(
             json_extract_string(props, '$.leisure'),
-            json_extract_string(props, '$.emergency'),
-            json_extract_string(props, '$.highway')
+            json_extract_string(props, '$."disused:leisure"'),
+            json_extract_string(props, '$."construction:leisure"')
+        ))
+        OR COALESCE(
+            json_extract_string(props, '$.railway'),
+            json_extract_string(props, '$."disused:railway"'),
+            json_extract_string(props, '$."construction:railway"')
+        ) = 'station'
+        OR COALESCE(
+            json_extract_string(props, '$.aeroway'),
+            json_extract_string(props, '$."disused:aeroway"'),
+            json_extract_string(props, '$."construction:aeroway"')
+        ) = 'aerodrome'
+    )
+    -- 5. Must carry an explicit signal of temporary closure, renovation, or construction
+    AND (
+        json_extract_string(props, '$."disused:amenity"') IS NOT NULL
+        OR json_extract_string(props, '$."construction:amenity"') IS NOT NULL
+        OR json_extract_string(props, '$."disused:tourism"') IS NOT NULL
+        OR json_extract_string(props, '$."construction:tourism"') IS NOT NULL
+        OR json_extract_string(props, '$."disused:leisure"') IS NOT NULL
+        OR json_extract_string(props, '$."construction:leisure"') IS NOT NULL
+        OR json_extract_string(props, '$."disused:railway"') IS NOT NULL
+        OR json_extract_string(props, '$."construction:railway"') IS NOT NULL
+        OR json_extract_string(props, '$."disused:aeroway"') IS NOT NULL
+        OR json_extract_string(props, '$."construction:aeroway"') IS NOT NULL
+        OR COALESCE(json_extract_string(props, '$.disused'), '') NOT IN ('', 'no')
+        OR COALESCE(json_extract_string(props, '$.construction'), '') NOT IN ('', 'no')
+        OR json_extract_string(props, '$.renovation') IS NOT NULL
+        OR json_extract_string(props, '$."temporary:closure"') IS NOT NULL
+        OR json_extract_string(props, '$.reopening_date') IS NOT NULL
+        OR json_extract_string(props, '$."opening_hours:covid19"') = 'open'
+    ),
+    FALSE
+);
+
+-- Resolve lifecycle state for temporary closed / under-renovation POIs
+CREATE OR REPLACE MACRO resolve_lifecycle_state(props) AS
+CASE 
+    WHEN json_extract_string(props, '$.renovation') IS NOT NULL 
+      OR json_extract_string(props, '$."disused:amenity"') IS NOT NULL AND json_extract_string(props, '$.renovation') IS NOT NULL THEN 'renovation'
+    WHEN json_extract_string(props, '$."construction:amenity"') IS NOT NULL 
+      OR json_extract_string(props, '$."construction:tourism"') IS NOT NULL 
+      OR json_extract_string(props, '$."construction:leisure"') IS NOT NULL 
+      OR json_extract_string(props, '$."construction:railway"') IS NOT NULL 
+      OR COALESCE(json_extract_string(props, '$.construction'), '') NOT IN ('', 'no') THEN 'reconstruction'
+    WHEN json_extract_string(props, '$."temporary:closure"') IS NOT NULL 
+      OR json_extract_string(props, '$.reopening_date') IS NOT NULL THEN 'temporary_closure'
+    WHEN json_extract_string(props, '$."disused:amenity"') IS NOT NULL 
+      OR json_extract_string(props, '$."disused:tourism"') IS NOT NULL 
+      OR json_extract_string(props, '$."disused:leisure"') IS NOT NULL 
+      OR json_extract_string(props, '$."disused:railway"') IS NOT NULL 
+      OR COALESCE(json_extract_string(props, '$.disused'), '') NOT IN ('', 'no') THEN 'renovation'
+    ELSE NULL
+END;
+
+-- Primary filter: determines whether an OSM feature qualifies as a POI candidate
+CREATE OR REPLACE MACRO is_poi_candidate(props, is_area := FALSE) AS
+COALESCE(
+    -- Exception: temporary closed/renovating landmark with high navigation relevance (Issue #1)
+    is_temporary_closed_landmark(props, is_area)
+    OR (
+        (
+            json_extract_string(props, '$.name') IS NOT NULL 
+            OR json_extract_string(props, '$.brand') IS NOT NULL 
+            OR (
+                json_extract_string(props, '$.operator') IS NOT NULL 
+                AND json_extract_string(props, '$.man_made') IS NULL
+            )
+            OR is_utility_infrastructure(
+                json_extract_string(props, '$.amenity'),
+                json_extract_string(props, '$.leisure'),
+                json_extract_string(props, '$.emergency'),
+                json_extract_string(props, '$.highway')
+            )
         )
-    )
-    AND (
-        json_extract_string(props, '$.amenity') IS NOT NULL 
-        OR json_extract_string(props, '$.shop') IS NOT NULL 
-        OR json_extract_string(props, '$.tourism') IS NOT NULL 
-        OR json_extract_string(props, '$.leisure') IS NOT NULL 
-        OR json_extract_string(props, '$.office') IS NOT NULL 
-        OR json_extract_string(props, '$.craft') IS NOT NULL 
-        OR json_extract_string(props, '$.healthcare') IS NOT NULL 
-        OR json_extract_string(props, '$.historic') IS NOT NULL 
-        OR json_extract_string(props, '$.railway') IS NOT NULL 
-        OR json_extract_string(props, '$.aeroway') IS NOT NULL
-        OR json_extract_string(props, '$.highway') IN ('rest_area', 'services')
-        OR json_extract_string(props, '$.emergency') = 'defibrillator'
-        OR (
-            json_extract_string(props, '$.man_made') IS NOT NULL 
-            AND NOT is_micro_man_made(json_extract_string(props, '$.man_made'))
-            AND (json_extract_string(props, '$.name') IS NOT NULL OR json_extract_string(props, '$.brand') IS NOT NULL)
+        AND (
+            json_extract_string(props, '$.amenity') IS NOT NULL 
+            OR json_extract_string(props, '$.shop') IS NOT NULL 
+            OR json_extract_string(props, '$.tourism') IS NOT NULL 
+            OR json_extract_string(props, '$.leisure') IS NOT NULL 
+            OR json_extract_string(props, '$.office') IS NOT NULL 
+            OR json_extract_string(props, '$.craft') IS NOT NULL 
+            OR json_extract_string(props, '$.healthcare') IS NOT NULL 
+            OR json_extract_string(props, '$.historic') IS NOT NULL 
+            OR json_extract_string(props, '$.railway') IS NOT NULL 
+            OR json_extract_string(props, '$.aeroway') IS NOT NULL
+            OR json_extract_string(props, '$.highway') IN ('rest_area', 'services')
+            OR json_extract_string(props, '$.emergency') = 'defibrillator'
+            OR (
+                json_extract_string(props, '$.man_made') IS NOT NULL 
+                AND NOT is_micro_man_made(json_extract_string(props, '$.man_made'))
+                AND (json_extract_string(props, '$.name') IS NOT NULL OR json_extract_string(props, '$.brand') IS NOT NULL)
+            )
         )
-    )
-    AND (
-        json_extract_string(props, '$.amenity') IS NULL 
-        OR NOT is_micro_infrastructure(json_extract_string(props, '$.amenity'))
-        OR json_extract_string(props, '$.shop') IS NOT NULL
-        OR (json_extract_string(props, '$.tourism') IS NOT NULL AND json_extract_string(props, '$.tourism') != 'information')
-        OR json_extract_string(props, '$.historic') IS NOT NULL
-        OR json_extract_string(props, '$.office') IS NOT NULL
-        OR json_extract_string(props, '$.craft') IS NOT NULL
-        OR json_extract_string(props, '$.healthcare') IS NOT NULL
-    )
-    AND (
-        NOT is_info_micro_infrastructure(json_extract_string(props, '$.tourism'), json_extract_string(props, '$.information'))
-        OR json_extract_string(props, '$.shop') IS NOT NULL
-        OR json_extract_string(props, '$.historic') IS NOT NULL
-        OR json_extract_string(props, '$.office') IS NOT NULL
-        OR json_extract_string(props, '$.craft') IS NOT NULL
-        OR json_extract_string(props, '$.healthcare') IS NOT NULL
-        OR (json_extract_string(props, '$.amenity') IS NOT NULL AND NOT is_micro_infrastructure(json_extract_string(props, '$.amenity')))
-        OR json_extract_string(props, '$.leisure') IS NOT NULL
+        AND (
+            json_extract_string(props, '$.amenity') IS NULL 
+            OR NOT is_micro_infrastructure(json_extract_string(props, '$.amenity'))
+            OR json_extract_string(props, '$.shop') IS NOT NULL
+            OR (json_extract_string(props, '$.tourism') IS NOT NULL AND json_extract_string(props, '$.tourism') != 'information')
+            OR json_extract_string(props, '$.historic') IS NOT NULL
+            OR json_extract_string(props, '$.office') IS NOT NULL
+            OR json_extract_string(props, '$.craft') IS NOT NULL
+            OR json_extract_string(props, '$.healthcare') IS NOT NULL
+        )
+        AND (
+            NOT is_info_micro_infrastructure(json_extract_string(props, '$.tourism'), json_extract_string(props, '$.information'))
+            OR json_extract_string(props, '$.shop') IS NOT NULL
+            OR json_extract_string(props, '$.historic') IS NOT NULL
+            OR json_extract_string(props, '$.office') IS NOT NULL
+            OR json_extract_string(props, '$.craft') IS NOT NULL
+            OR json_extract_string(props, '$.healthcare') IS NOT NULL
+            OR (json_extract_string(props, '$.amenity') IS NOT NULL AND NOT is_micro_infrastructure(json_extract_string(props, '$.amenity')))
+            OR json_extract_string(props, '$.leisure') IS NOT NULL
+        )
     ),
     FALSE
 );

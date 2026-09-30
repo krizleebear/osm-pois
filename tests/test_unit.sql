@@ -300,6 +300,43 @@ SELECT
     END AS micro_filter_check
 FROM mock_micro_filtered;
 
+-- Check 3.2b: Temporary closed landmark filtering and lifecycle state (Issue #1)
+CREATE TEMP TABLE mock_lifecycle_input AS
+SELECT 101 AS id, '{"@type":"way","disused:amenity":"theatre","name":"Theater Augsburg","wikidata":"Q15850550","building":"yes"}'::JSON AS props, TRUE AS is_area -- Theater Augsburg under renovation
+UNION ALL
+SELECT 102 AS id, '{"@type":"relation","construction:amenity":"hospital","name":"Neues Klinikum","operator":"Städtisches Klinikum","building":"yes"}'::JSON AS props, TRUE AS is_area -- Hospital under construction
+UNION ALL
+SELECT 103 AS id, '{"@type":"way","amenity":"museum","name":"Stadtmuseum","temporary:closure":"renovation","addr:street":"Museumsweg","building":"yes"}'::JSON AS props, TRUE AS is_area -- Museum temporarily closed
+UNION ALL
+SELECT 104 AS id, '{"@type":"node","disused:shop":"bakery","name":"Alte Bäckerei"}'::JSON AS props, FALSE AS is_area -- Disused shop (must be excluded)
+UNION ALL
+SELECT 105 AS id, '{"@type":"way","disused:amenity":"theatre","name":"Altes Theater","demolished:building":"yes"}'::JSON AS props, TRUE AS is_area -- Demolished (must be excluded)
+UNION ALL
+SELECT 106 AS id, '{"@type":"way","disused:amenity":"theatre","name":"Ruine Theater","ruins":"yes"}'::JSON AS props, TRUE AS is_area -- Ruins (must be excluded)
+UNION ALL
+SELECT 107 AS id, '{"@type":"node","disused:amenity":"bench","name":"Alte Bank"}'::JSON AS props, FALSE AS is_area; -- Micro-infra (must be excluded)
+
+CREATE TEMP TABLE mock_lifecycle_evaluated AS
+SELECT 
+    id,
+    is_poi_candidate(props, is_area) AS is_candidate,
+    is_temporary_closed_landmark(props, is_area) AS is_temp_closed,
+    resolve_lifecycle_state(props) AS lifecycle_state
+FROM mock_lifecycle_input;
+
+SELECT 
+    CASE 
+        WHEN (SELECT list_sort(list(id)) FROM mock_lifecycle_evaluated WHERE is_candidate) = [101, 102, 103]
+         AND (SELECT list_sort(list(id)) FROM mock_lifecycle_evaluated WHERE is_temp_closed) = [101, 102, 103]
+         AND (SELECT lifecycle_state FROM mock_lifecycle_evaluated WHERE id = 101) = 'renovation'
+         AND (SELECT lifecycle_state FROM mock_lifecycle_evaluated WHERE id = 102) = 'reconstruction'
+         AND (SELECT lifecycle_state FROM mock_lifecycle_evaluated WHERE id = 103) = 'temporary_closure'
+        THEN '[OK] Temporary closed landmark check passed: Augsburg Theater, Klinikum, and Stadtmuseum admitted with lifecycle states; disused shops and demolished buildings rejected'
+        ELSE error('LIFECYCLE LANDMARK CHECK FAILED: unexpected filtering or lifecycle states!')
+    END AS lifecycle_check
+FROM mock_lifecycle_evaluated
+LIMIT 1;
+
 -- Check 3.3: Schema type definitions check via empty_rules macro
 CREATE TEMP TABLE schema_type_check AS
 SELECT 

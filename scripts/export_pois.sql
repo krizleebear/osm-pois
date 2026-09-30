@@ -130,7 +130,7 @@ WHERE rel_rank = 1;
 
 -- Stream Osmium GeoJSON directly into Overture Places GeoParquet (Zero Intermediate Materialization)
 COPY (
-    WITH base_json AS (
+    WITH parsed_geom AS (
         SELECT 
             ST_GeomFromGeoJSON(geometry) AS geom,
             properties
@@ -138,8 +138,14 @@ COPY (
                        format='newline_delimited', 
                        maximum_object_size=268435456,
                        columns={'geometry': 'JSON', 'properties': 'JSON'})
-        WHERE is_poi_candidate(properties)
-          AND geometry IS NOT NULL
+        WHERE geometry IS NOT NULL
+    ),
+    base_json AS (
+        SELECT 
+            geom,
+            properties
+        FROM parsed_geom
+        WHERE is_poi_candidate(properties, ST_GeometryType(geom) IN ('POLYGON', 'MULTIPOLYGON'))
     ),
     valid_geoms AS (
         SELECT 
@@ -161,22 +167,42 @@ COPY (
             osm_names_common(properties) AS names_common,
             osm_names_rules(properties) AS names_rules,
             osm_brand_common(properties) AS brand_common,
-            json_extract_string(properties, '$.amenity') AS amenity,
+            COALESCE(
+                json_extract_string(properties, '$.amenity'),
+                json_extract_string(properties, '$."disused:amenity"'),
+                json_extract_string(properties, '$."construction:amenity"')
+            ) AS amenity,
             json_extract_string(properties, '$.religion') AS religion,
             json_extract_string(properties, '$.denomination') AS denomination,
             json_extract_string(properties, '$.cuisine') AS cuisine,
             json_extract_string(properties, '$.shop') AS shop,
-            json_extract_string(properties, '$.tourism') AS tourism,
+            COALESCE(
+                json_extract_string(properties, '$.tourism'),
+                json_extract_string(properties, '$."disused:tourism"'),
+                json_extract_string(properties, '$."construction:tourism"')
+            ) AS tourism,
             json_extract_string(properties, '$.information') AS information,
             json_extract_string(properties, '$.entrance') AS entrance,
-            json_extract_string(properties, '$.leisure') AS leisure,
+            COALESCE(
+                json_extract_string(properties, '$.leisure'),
+                json_extract_string(properties, '$."disused:leisure"'),
+                json_extract_string(properties, '$."construction:leisure"')
+            ) AS leisure,
             json_extract_string(properties, '$.office') AS office,
             json_extract_string(properties, '$.craft') AS craft,
             json_extract_string(properties, '$.healthcare') AS healthcare,
             json_extract_string(properties, '$.historic') AS historic,
             json_extract_string(properties, '$.sport') AS sport,
-            json_extract_string(properties, '$.aeroway') AS aeroway,
-            json_extract_string(properties, '$.railway') AS railway,
+            COALESCE(
+                json_extract_string(properties, '$.aeroway'),
+                json_extract_string(properties, '$."disused:aeroway"'),
+                json_extract_string(properties, '$."construction:aeroway"')
+            ) AS aeroway,
+            COALESCE(
+                json_extract_string(properties, '$.railway'),
+                json_extract_string(properties, '$."disused:railway"'),
+                json_extract_string(properties, '$."construction:railway"')
+            ) AS railway,
             json_extract_string(properties, '$.station') AS station,
             json_extract_string(properties, '$.man_made') AS man_made,
             json_extract_string(properties, '$.emergency') AS emergency,
@@ -200,6 +226,8 @@ COPY (
             extract_poi_level(properties) AS level,
             json_extract_string(properties, '$.delivery') AS delivery,
             json_extract_string(properties, '$.takeaway') AS takeaway,
+            is_temporary_closed_landmark(properties, ST_GeometryType(geom) IN ('POLYGON', 'MULTIPOLYGON')) AS is_temp_closed,
+            resolve_lifecycle_state(properties) AS lifecycle_state,
             osm_raw_tags(properties) AS tags,
             -- Metric footprint area (m², integer) of polygon/multipolygon POI geometries;
             -- NULL for point/node features (see osm_area_sqm in 02_macros.sql)
@@ -296,7 +324,10 @@ COPY (
             'update_time': osm_timestamp,
             'confidence': 1.0::DOUBLE
         }] AS sources,
-        'active' AS operating_status,
+        CASE 
+            WHEN is_temp_closed THEN 'temporarily_unavailable'
+            ELSE 'active'
+        END AS operating_status,
         main_category AS basic_category,
         {'primary': main_category, 'hierarchy': COALESCE(getvariable('taxonomy_lookup').hierarchy_map[main_category], [main_category]), 'alternates': alternate_categories} AS taxonomy,
         COALESCE(osm_version, 1) AS version,
@@ -320,6 +351,8 @@ COPY (
         delivery,
         takeaway,
         area_m2,
+        lifecycle_state,
+        CASE WHEN is_temp_closed THEN true ELSE NULL END AS navigation_relevant,
         tags,
         -- Parent & Relation Membership Attributes (Superset Extension)
         parent_osm_id,
