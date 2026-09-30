@@ -1,14 +1,48 @@
 -- DuckDB SQL: OSM PBF -> Overture Places-compatible GeoParquet
 LOAD spatial;
 
--- Memory and thread bounds for CI/CD runner environments (Azure DevOps 7GB limit)
-SET max_memory = '4200MB';
+-- Memory and thread bounds for CI/CD runner environments (Azure DevOps 7GB limit).
+--
+-- ARCHITECTURAL MEMORY CALIBRATION & LESSONS LEARNED (DE Extract: 8.3M features -> 3.18M POIs):
+-- 1. Blocking Pipeline Breakers:
+--    Global window functions (e.g. ROW_NUMBER() OVER (...) in deduplication CTEs) force
+--    DuckDB to materialize all rows in RAM before writing any Parquet output. This caused
+--    the initial CI OOM ("failed to allocate 394.9 MiB (3.7 GiB/3.9 GiB used)"). The pipeline
+--    must remain 100% streaming (PROJECTION -> HASH_JOIN -> COPY_TO_FILE).
+-- 2. Buffer Manager & Atomic Allocation Sizing:
+--    read_json(..., maximum_object_size=N) pre-allocates internal stream buffers of 2 * N.
+--    At N = 64MB (67108864), the allocation chunk is 127.9 MiB. At N = 256MB, it is 394.9 MiB.
+--    DuckDB does not actively free blocks during streaming if current memory < max_memory.
+--    Capping max_memory too tightly (e.g. 2600MB or 3800MB) causes DuckDB's working set to reach
+--    the cap (e.g. 3.4 GiB / 3.5 GiB used), at which point the next 127.9 MiB atomic buffer
+--    request fails with an internal BufferManager OutOfMemoryError, even with gigabytes of host RAM free!
+-- 3. 7.0 GB Azure DevOps Runner Budget:
+--    - Osmium export (-i sparse_file_array): ~116 MB on nodes, peaks at ~730 MB on ways/relations.
+--    - DuckDB streaming working set: peaks at ~4.5 - 4.7 GB RSS over 8.3M features.
+--    - Host OS, page cache, pipe buffers: ~1.5 - 1.8 GB free headroom.
+--    SET max_memory = '4800MB' is the calibrated sweet spot: it gives DuckDB ~4.5 GiB headroom
+--    to prevent internal allocation choke, while keeping combined container RSS (~5.4 GB) safely
+--    below the 7.0 GB physical container limit (preventing Linux SIGKILL / Exit 137).
+-- 4. Cache & Row Group Limits:
+--    - SET enable_external_file_cache = false prevents written Parquet pages from lingering in RAM.
+--    - SET write_buffer_row_group_count = 1 flushes row groups incrementally.
+--    - SET write_buffer_row_group_memory_limit = '64MB' avoids oversized row group buffers.
+SET max_memory = '4800MB';
 SET temp_directory = '__TEMP_DIR__';
 SET preserve_insertion_order = false;
 SET threads = 1;
 SET allocator_background_threads = true;
 SET write_buffer_row_group_count = 1;
-SET write_buffer_row_group_memory_limit = '128MB';
+SET write_buffer_row_group_memory_limit = '64MB';
+SET enable_external_file_cache = false;
+
+-- Maximum size of a single GeoJSON sequence record accepted by the JSON reader.
+-- Measured: DuckDB's JSON reader pre-allocates several buffers of this size, so
+-- this setting is the dominant contributor to the fixed memory floor
+-- (256 MB -> ~1120 MB, 64 MB -> ~490 MB). 64 MB keeps ample headroom above the
+-- largest GeoJSON record observed on large extracts (multipolygon relations of
+-- ~38 MB on the continental US) while removing ~640 MB of fixed overhead.
+-- Override per region via OSM_POIS_MAX_OBJECT_SIZE (bytes) in entrypoint.sh.
 
 -- Configure repository root for loading external mappings
 SET VARIABLE repo_root = '__REPO_ROOT__';
@@ -21,18 +55,14 @@ SET VARIABLE repo_root = '__REPO_ROOT__';
 .read __REPO_ROOT__/scripts/sql/05_relations.sql
 
 -- Build Inverted Relation Membership Index from extracted OPL relations stream
-CREATE TEMP TABLE IF NOT EXISTS raw_rel_lines AS 
-SELECT col0 AS line 
-FROM read_csv('__INPUT_RELATIONS_OPL__', columns={'col0': 'VARCHAR'}, quote='', escape='', delim='\n', auto_detect=false);
-
 CREATE TEMP TABLE IF NOT EXISTS osm_relation_members AS
 WITH parsed_rels AS (
     SELECT 
-        'osm:relation/' || regexp_extract(line, '^r([0-9]+)', 1) AS relation_id,
-        regexp_extract(line, ' T([^ ]*)', 1) AS raw_tags,
-        regexp_extract(line, ' M([^ ]*)', 1) AS raw_members
-    FROM raw_rel_lines
-    WHERE line LIKE 'r%'
+        'osm:relation/' || regexp_extract(col0, '^r([0-9]+)', 1) AS relation_id,
+        regexp_extract(col0, ' T([^ ]*)', 1) AS raw_tags,
+        regexp_extract(col0, ' M([^ ]*)', 1) AS raw_members
+    FROM read_csv('__INPUT_RELATIONS_OPL__', columns={'col0': 'VARCHAR'}, quote='', escape='', delim='\n', auto_detect=false)
+    WHERE col0 LIKE 'r%'
 ),
 tag_split AS (
     SELECT 
@@ -130,22 +160,16 @@ WHERE rel_rank = 1;
 
 -- Stream Osmium GeoJSON directly into Overture Places GeoParquet (Zero Intermediate Materialization)
 COPY (
-    WITH parsed_geom AS (
+    WITH base_json AS (
         SELECT 
             ST_GeomFromGeoJSON(geometry) AS geom,
             properties
         FROM read_json('__INPUT_JSONL__', 
                        format='newline_delimited', 
-                       maximum_object_size=268435456,
+                       maximum_object_size=__MAX_OBJECT_SIZE__,
                        columns={'geometry': 'JSON', 'properties': 'JSON'})
-        WHERE geometry IS NOT NULL
-    ),
-    base_json AS (
-        SELECT 
-            geom,
-            properties
-        FROM parsed_geom
-        WHERE is_poi_candidate(properties, ST_GeometryType(geom) IN ('POLYGON', 'MULTIPOLYGON'))
+        WHERE is_poi_candidate(properties)
+          AND geometry IS NOT NULL
     ),
     valid_geoms AS (
         SELECT 
@@ -277,34 +301,6 @@ COPY (
             ) AS alternate_categories
         FROM categorized c
     ),
-    deduplicated AS (
-        -- Issue #2 (item 4): Deduplicate equivalent node and way/relation representations of the same place
-        -- When a named area (way or relation) and a point (node) share the exact name and primary category within close spatial proximity (100m grid),
-        -- prefer the way/relation representation and drop the redundant node.
-        SELECT * EXCLUDE (dedup_rank)
-        FROM (
-            SELECT 
-                *,
-                ROW_NUMBER() OVER (
-                    PARTITION BY 
-                        CASE 
-                            WHEN name IS NOT NULL AND name != '' AND main_category IS NOT NULL
-                            THEN lower(trim(name)) || '|' || main_category || '|' || CAST(round(ST_X(geometry), 3) AS VARCHAR) || '|' || CAST(round(ST_Y(geometry), 3) AS VARCHAR)
-                            ELSE id 
-                        END
-                    ORDER BY 
-                        CASE 
-                            WHEN id LIKE 'osm:relation/%' THEN 1
-                            WHEN id LIKE 'osm:way/%' THEN 2
-                            ELSE 3
-                        END,
-                        confidence DESC,
-                        COALESCE(osm_version, 1) DESC
-                ) AS dedup_rank
-            FROM with_alternates
-        )
-        WHERE dedup_rank = 1
-    ),
     with_relations AS (
         SELECT 
             c.*,
@@ -313,7 +309,7 @@ COPY (
             rel.parent_osm_id,
             rel.parent_feature_kind,
             resolve_access_type(c.amenity, c.entrance, c.railway, rel.member_role, rel.parent_feature_kind) AS access_type
-        FROM deduplicated c
+        FROM with_alternates c
         LEFT JOIN osm_relation_members rel ON c.id = rel.member_id
     )
     SELECT

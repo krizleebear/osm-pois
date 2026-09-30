@@ -250,6 +250,15 @@ monitor_resources() {
 BUILD_VERSION="${BUILD_VERSION:-${BUILD_BUILDNUMBER:-${BUILD_NUMBER:-$(git describe --tags --always 2>/dev/null || echo "dev")}}}"
 EXPORT_TIMESTAMP="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
 
+# Maximum size of a single GeoJSON sequence record accepted by the DuckDB JSON reader.
+# Measured: the reader pre-allocates several buffers of this size, which dominates the
+# fixed memory floor of the conversion (256 MB -> ~1120 MB, 64 MB -> ~490 MB).
+# 64 MB stays safely above the largest record observed on large extracts
+# (multipolygon relations of ~38 MB on the continental US) while removing ~600 MB
+# of fixed overhead. Raise via OSM_POIS_MAX_OBJECT_SIZE (bytes) for extracts known
+# to contain larger single features.
+MAX_OBJECT_SIZE="${OSM_POIS_MAX_OBJECT_SIZE:-67108864}"
+
 TMP_RELS_OPL="${TMP_DIR}/relations.opl"
 echo "[STAGE 1/4] Pre-filtering relations into lightweight OPL index..."
 osmium tags-filter -R "$INPUT_PBF" r/type=site,parking -f opl -o "$TMP_RELS_OPL" --overwrite 2>/dev/null || touch "$TMP_RELS_OPL"
@@ -268,6 +277,7 @@ sed \
   -e "s|__EXPORT_TIMESTAMP__|${EXPORT_TIMESTAMP}|g" \
   -e "s|__TEMP_DIR__|${TMP_DIR}|g" \
   -e "s|__SPATIAL_FILTER__|${SPATIAL_FILTER:-}|g" \
+  -e "s|__MAX_OBJECT_SIZE__|${MAX_OBJECT_SIZE}|g" \
   "$SCRIPT_DIR/export_pois.sql" > "$TMP_SQL"
 
 duckdb -dark-mode -no-stdin -c ".read $TMP_SQL" &

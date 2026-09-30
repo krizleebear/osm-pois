@@ -72,10 +72,20 @@ if [ -f "$REPO_ROOT/azure-pipelines.yml" ]; then
         echo "ERROR: azure-pipelines.yml must define prefilteredBuildId parameter!"
         exit 1
     fi
-    # Ensure export_pois.sql configures maximum_object_size >= 256 MB (268435456 bytes) to handle massive features (e.g. US)
-    MAX_OBJ_SIZE=$(grep -oE 'maximum_object_size=[0-9]+' "$REPO_ROOT/scripts/export_pois.sql" | cut -d'=' -f2)
-    if [ -z "$MAX_OBJ_SIZE" ] || [ "$MAX_OBJ_SIZE" -lt 268435456 ]; then
-        echo "ERROR: scripts/export_pois.sql must configure maximum_object_size >= 268435456 (256 MB) to prevent buffer overflow on large country extracts like US!"
+    # Ensure the JSON reader buffer limit is tokenised (tunable per region) and that the
+    # default is large enough to absorb the biggest single GeoJSON record we have ever
+    # observed. The continental US produces multipolygon relations of ~38 MB, so 64 MB
+    # (67108864 bytes) is the minimum safe default. Larger values are measurably wasteful:
+    # DuckDB's read_json pre-allocates several buffers of this size, making it the single
+    # largest contributor to the fixed memory floor of the conversion.
+    if ! grep -q 'maximum_object_size=__MAX_OBJECT_SIZE__' "$REPO_ROOT/scripts/export_pois.sql"; then
+        echo "ERROR: scripts/export_pois.sql must read maximum_object_size from the __MAX_OBJECT_SIZE__ token so regions can tune it!"
+        exit 1
+    fi
+    DEFAULT_MAX_OBJ_SIZE=$(grep -oE 'OSM_POIS_MAX_OBJECT_SIZE:-[0-9]+' "$REPO_ROOT/scripts/entrypoint.sh" | head -1 | grep -oE '[0-9]+$')
+    MIN_REQUIRED_OBJ_SIZE=67108864
+    if [ -z "$DEFAULT_MAX_OBJ_SIZE" ] || [ "$DEFAULT_MAX_OBJ_SIZE" -lt "$MIN_REQUIRED_OBJ_SIZE" ]; then
+        echo "ERROR: OSM_POIS_MAX_OBJECT_SIZE default must be >= $MIN_REQUIRED_OBJ_SIZE (64 MB) to absorb the largest observed OSM GeoJSON record (~38 MB, US multipolygon relations)!"
         exit 1
     fi
     echo "=== [OK] Touchstone DE Pipeline Architecture & Buffer Limits Verified ==="
