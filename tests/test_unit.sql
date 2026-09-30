@@ -79,7 +79,8 @@ CREATE TEMP TABLE test_cases (
     name VARCHAR DEFAULT NULL,
     man_made VARCHAR DEFAULT NULL,
     emergency VARCHAR DEFAULT NULL,
-    highway VARCHAR DEFAULT NULL
+    highway VARCHAR DEFAULT NULL,
+    landuse VARCHAR DEFAULT NULL
 );
 
 INSERT INTO test_cases (test_id, expected_category, amenity) VALUES
@@ -167,6 +168,10 @@ INSERT INTO test_cases (test_id, expected_category, highway) VALUES
     ('TC50-Highway-Rest-Area', 'rest_areas', 'rest_area'),
     ('TC51-Highway-Services', 'rest_areas', 'services');
 
+INSERT INTO test_cases (test_id, expected_category, landuse) VALUES
+    ('TC52-Cemetery', 'cemeteries', 'cemetery'),
+    ('TC53-Winter-Sports', 'ski_area', 'winter_sports');
+
 -- Evaluate categories using the production resolve_poi_category macro
 CREATE TEMP TABLE evaluated AS
 SELECT 
@@ -178,7 +183,7 @@ SELECT
         t.cuisine, t.station, t.religion, t.denomination,
         t.information, t.name,
         t.man_made, t.emergency,
-        t.highway
+        t.highway, t.landuse
     ) AS actual_category
 FROM test_cases t;
 
@@ -336,6 +341,82 @@ SELECT
     END AS lifecycle_check
 FROM mock_lifecycle_evaluated
 LIMIT 1;
+
+-- Check 3.2c: Named search-relevant area classification & exclusions (Issue #2)
+CREATE TEMP TABLE mock_area_poi_input AS
+SELECT 201 AS id, '{"@type":"way","name":"Englischer Garten","leisure":"park"}'::JSON AS props, TRUE AS is_area -- Named park area
+UNION ALL
+SELECT 202 AS id, '{"@type":"way","name":"Nordfriedhof","landuse":"cemetery"}'::JSON AS props, TRUE AS is_area -- Named cemetery area
+UNION ALL
+SELECT 203 AS id, '{"@type":"relation","name":"Campus Garching","amenity":"university"}'::JSON AS props, TRUE AS is_area -- Named university campus
+UNION ALL
+SELECT 204 AS id, '{"@type":"way","name":"Kleingartenverein Frohsinn","landuse":"allotments"}'::JSON AS props, TRUE AS is_area -- Named allotments
+UNION ALL
+SELECT 205 AS id, '{"@type":"way","name":"Wohngebiet Nord","landuse":"residential"}'::JSON AS props, TRUE AS is_area -- Technical residential (must be excluded)
+UNION ALL
+SELECT 206 AS id, '{"@type":"way","name":"Gewerbegebiet Süd","landuse":"industrial"}'::JSON AS props, TRUE AS is_area -- Technical industrial (must be excluded)
+UNION ALL
+SELECT 207 AS id, '{"@type":"way","landuse":"cemetery"}'::JSON AS props, TRUE AS is_area -- Unnamed cemetery area (must be excluded from area extraction)
+UNION ALL
+SELECT 208 AS id, '{"@type":"way","name":"Acker 12","landuse":"farmland"}'::JSON AS props, TRUE AS is_area; -- Technical farmland (must be excluded)
+
+CREATE TEMP TABLE mock_area_poi_evaluated AS
+SELECT 
+    id,
+    is_poi_candidate(props, is_area) AS is_candidate,
+    is_search_relevant_area(props, is_area) AS is_search_area
+FROM mock_area_poi_input;
+
+SELECT 
+    CASE 
+        WHEN (SELECT list_sort(list(id)) FROM mock_area_poi_evaluated WHERE is_candidate) = [201, 202, 203, 204]
+         AND (SELECT list_sort(list(id)) FROM mock_area_poi_evaluated WHERE is_search_area) = [201, 202, 203, 204]
+        THEN '[OK] Search-relevant area check passed: Englischer Garten, Nordfriedhof, Campus, and Allotments admitted; residential/industrial/farmland and unnamed areas excluded'
+        ELSE error('SEARCH-RELEVANT AREA CHECK FAILED: unexpected area POI retention!')
+    END AS area_poi_check
+FROM mock_area_poi_evaluated
+LIMIT 1;
+
+-- Check 3.2d: Deduplication test of equivalent node and way representations (Issue #2 item 4)
+CREATE TEMP TABLE mock_dedup_input AS
+SELECT 'osm:way/1001' AS id, 'Central Park' AS name, 'park' AS main_category, 7.4121 AS lon, 43.7121 AS lat, 0.85::DOUBLE AS confidence, 3 AS osm_version
+UNION ALL
+SELECT 'osm:node/2001' AS id, 'Central Park' AS name, 'park' AS main_category, 7.4123 AS lon, 43.7122 AS lat, 0.60::DOUBLE AS confidence, 1 AS osm_version
+UNION ALL
+SELECT 'osm:node/3001' AS id, 'Other Park' AS name, 'park' AS main_category, 7.4200 AS lon, 43.7200 AS lat, 0.70::DOUBLE AS confidence, 1 AS osm_version;
+
+CREATE TEMP TABLE mock_dedup_result AS
+SELECT * EXCLUDE (dedup_rank)
+FROM (
+    SELECT 
+        *,
+        ROW_NUMBER() OVER (
+            PARTITION BY 
+                CASE 
+                    WHEN name IS NOT NULL AND name != '' AND main_category IS NOT NULL
+                    THEN lower(trim(name)) || '|' || main_category || '|' || CAST(round(lon, 3) AS VARCHAR) || '|' || CAST(round(lat, 3) AS VARCHAR)
+                    ELSE id 
+                END
+            ORDER BY 
+                CASE 
+                    WHEN id LIKE 'osm:relation/%' THEN 1
+                    WHEN id LIKE 'osm:way/%' THEN 2
+                    ELSE 3
+                END,
+                confidence DESC,
+                COALESCE(osm_version, 1) DESC
+        ) AS dedup_rank
+    FROM mock_dedup_input
+)
+WHERE dedup_rank = 1;
+
+SELECT 
+    CASE 
+        WHEN list_sort(list(id)) = ['osm:node/3001', 'osm:way/1001']
+        THEN '[OK] Deduplication test passed: redundant node/2001 dropped in favor of way/1001 for Central Park'
+        ELSE error('DEDUPLICATION TEST FAILED: unexpected features retained ' || CAST(list(id) AS VARCHAR))
+    END AS dedup_check
+FROM mock_dedup_result;
 
 -- Check 3.3: Schema type definitions check via empty_rules macro
 CREATE TEMP TABLE schema_type_check AS

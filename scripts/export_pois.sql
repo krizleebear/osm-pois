@@ -193,6 +193,7 @@ COPY (
             json_extract_string(properties, '$.healthcare') AS healthcare,
             json_extract_string(properties, '$.historic') AS historic,
             json_extract_string(properties, '$.sport') AS sport,
+            json_extract_string(properties, '$.landuse') AS landuse,
             COALESCE(
                 json_extract_string(properties, '$.aeroway'),
                 json_extract_string(properties, '$."disused:aeroway"'),
@@ -261,7 +262,7 @@ COPY (
                 f.cuisine, f.station, f.religion, f.denomination,
                 f.information, f.name,
                 f.man_made, f.emergency,
-                f.highway
+                f.highway, f.landuse
             ) AS main_category
         FROM raw_features f
     ),
@@ -272,9 +273,37 @@ COPY (
                 c.main_category,
                 c.amenity, c.shop, c.tourism, c.leisure, c.office,
                 c.craft, c.healthcare, c.historic, c.highway,
-                c.cuisine, c.sport
+                c.cuisine, c.sport, c.landuse
             ) AS alternate_categories
         FROM categorized c
+    ),
+    deduplicated AS (
+        -- Issue #2 (item 4): Deduplicate equivalent node and way/relation representations of the same place
+        -- When a named area (way or relation) and a point (node) share the exact name and primary category within close spatial proximity (100m grid),
+        -- prefer the way/relation representation and drop the redundant node.
+        SELECT * EXCLUDE (dedup_rank)
+        FROM (
+            SELECT 
+                *,
+                ROW_NUMBER() OVER (
+                    PARTITION BY 
+                        CASE 
+                            WHEN name IS NOT NULL AND name != '' AND main_category IS NOT NULL
+                            THEN lower(trim(name)) || '|' || main_category || '|' || CAST(round(ST_X(geometry), 3) AS VARCHAR) || '|' || CAST(round(ST_Y(geometry), 3) AS VARCHAR)
+                            ELSE id 
+                        END
+                    ORDER BY 
+                        CASE 
+                            WHEN id LIKE 'osm:relation/%' THEN 1
+                            WHEN id LIKE 'osm:way/%' THEN 2
+                            ELSE 3
+                        END,
+                        confidence DESC,
+                        COALESCE(osm_version, 1) DESC
+                ) AS dedup_rank
+            FROM with_alternates
+        )
+        WHERE dedup_rank = 1
     ),
     with_relations AS (
         SELECT 
@@ -284,7 +313,7 @@ COPY (
             rel.parent_osm_id,
             rel.parent_feature_kind,
             resolve_access_type(c.amenity, c.entrance, c.railway, rel.member_role, rel.parent_feature_kind) AS access_type
-        FROM with_alternates c
+        FROM deduplicated c
         LEFT JOIN osm_relation_members rel ON c.id = rel.member_id
     )
     SELECT

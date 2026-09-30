@@ -198,11 +198,65 @@ CASE
     ELSE NULL
 END;
 
+-- Identify named, search-relevant OSM area features (Issue #2: parks, cemeteries, allotments, sports grounds, etc.)
+CREATE OR REPLACE MACRO is_search_relevant_area(props, is_area := FALSE) AS
+COALESCE(
+    -- 1. Must be an area feature (polygon/multipolygon or way/relation) with an explicit, non-empty name
+    (
+        is_area 
+        OR json_extract_string(props, '$.@type') IN ('way', 'relation')
+        OR json_extract_string(props, '$.building') IS NOT NULL
+    )
+    AND json_extract_string(props, '$.name') IS NOT NULL
+    AND trim(json_extract_string(props, '$.name')) != ''
+    -- 2. Must belong to an eligible search-relevant area domain
+    AND (
+        -- Search-relevant landuse classes
+        list_contains([
+            'cemetery', 'recreation_ground', 'village_green', 'allotments',
+            'winter_sports', 'quarry', 'orchard', 'vineyard', 'military'
+        ], json_extract_string(props, '$.landuse'))
+        -- Search-relevant leisure area classes
+        OR list_contains([
+            'park', 'nature_reserve', 'common', 'garden', 'golf_course',
+            'marina', 'stadium', 'sports_centre', 'pitch', 'track',
+            'water_park', 'beach_resort', 'disc_golf_course', 'miniature_golf',
+            'dog_park', 'recreation_ground'
+        ], json_extract_string(props, '$.leisure'))
+        -- Search-relevant amenity campus / area classes
+        OR list_contains([
+            'university', 'college', 'school', 'hospital', 'grave_yard',
+            'place_of_worship', 'community_centre', 'arts_centre',
+            'events_venue', 'marketplace', 'exhibition_centre'
+        ], json_extract_string(props, '$.amenity'))
+        -- Search-relevant tourism area classes
+        OR list_contains([
+            'attraction', 'theme_park', 'zoo', 'aquarium', 'picnic_site', 'camp_site', 'caravan_site'
+        ], json_extract_string(props, '$.tourism'))
+        -- Search-relevant historic area classes
+        OR list_contains([
+            'monument', 'memorial', 'castle', 'archaeological_site', 'ruins', 'fort', 'battlefield'
+        ], json_extract_string(props, '$.historic'))
+    )
+    -- 3. Explicit exclusion policy for non-searchable, purely technical or residential landuse areas
+    AND COALESCE(
+        list_contains([
+            'residential', 'industrial', 'commercial', 'construction', 'farmland', 'farmyard',
+            'forest', 'grass', 'meadow', 'scrub', 'heath', 'basin', 'reservoir',
+            'railway', 'brownfield', 'greenfield', 'landfill', 'depot', 'garages'
+        ], json_extract_string(props, '$.landuse')),
+        FALSE
+    ) = FALSE,
+    FALSE
+);
+
 -- Primary filter: determines whether an OSM feature qualifies as a POI candidate
 CREATE OR REPLACE MACRO is_poi_candidate(props, is_area := FALSE) AS
 COALESCE(
-    -- Exception: temporary closed/renovating landmark with high navigation relevance (Issue #1)
+    -- Exception 1: temporary closed/renovating landmark with high navigation relevance (Issue #1)
     is_temporary_closed_landmark(props, is_area)
+    -- Exception 2: named, search-relevant OSM area feature (Issue #2)
+    OR is_search_relevant_area(props, is_area)
     OR (
         (
             json_extract_string(props, '$.name') IS NOT NULL 
