@@ -53,6 +53,39 @@ SELECT
     END AS empty_row_check
 FROM empty_taxonomy_entries;
 
+-- Check 1.3: Assert no duplicate lines in overture_to_osm_categories.csv
+CREATE TEMP TABLE duplicate_osm_mapping_lines AS
+SELECT 
+    column0 AS overture_cat, 
+    column1 AS osm_rule, 
+    count(*) AS occurrences
+FROM read_csv(COALESCE(getvariable('repo_root'), '.') || '/mappings/overture_to_osm_categories.csv', header=False)
+GROUP BY column0, column1
+HAVING count(*) > 1;
+
+SELECT 
+    CASE 
+        WHEN count(*) > 0 THEN error('TAXONOMY INTEGRITY FAILED: ' || count(*) || ' duplicate line(s) found in overture_to_osm_categories.csv!')
+        ELSE '[OK] Taxonomy duplicate check passed: 0 duplicate lines in overture_to_osm_categories.csv'
+    END AS duplicate_mapping_check
+FROM duplicate_osm_mapping_lines;
+
+-- Check 1.4: Assert no duplicate categories in overture_categories.csv
+CREATE TEMP TABLE duplicate_taxonomy_categories AS
+SELECT 
+    column0 AS overture_cat,
+    count(*) AS occurrences
+FROM read_csv(COALESCE(getvariable('repo_root'), '.') || '/mappings/overture_categories.csv', header=False)
+GROUP BY column0
+HAVING count(*) > 1;
+
+SELECT 
+    CASE 
+        WHEN count(*) > 0 THEN error('TAXONOMY INTEGRITY FAILED: ' || count(*) || ' duplicate category definition(s) found in overture_categories.csv!')
+        ELSE '[OK] Taxonomy duplicate check passed: 0 duplicate categories in overture_categories.csv'
+    END AS duplicate_taxonomy_check
+FROM duplicate_taxonomy_categories;
+
 -- ----------------------------------------------------------------------------
 -- Part 2: Mock Category Resolution Unit Tests (via resolve_poi_category macro)
 -- ----------------------------------------------------------------------------
@@ -172,6 +205,96 @@ INSERT INTO test_cases (test_id, expected_category, landuse) VALUES
     ('TC52-Cemetery', 'cemeteries', 'cemetery'),
     ('TC53-Winter-Sports', 'ski_area', 'winter_sports');
 
+INSERT INTO test_cases (test_id, expected_category, craft) VALUES
+    ('TC54-Craft-Metal-Construction', 'metal_fabricator', 'metal_construction'),
+    ('TC55-Craft-HVAC', 'hvac_service', 'hvac'),
+    ('TC56-Craft-Joiner', 'carpenter', 'joiner');
+
+INSERT INTO test_cases (test_id, expected_category, office) VALUES
+    ('TC57-Office-Notary', 'notary_public', 'notary'),
+    ('TC58-Office-Coworking', 'coworking_space', 'coworking');
+
+INSERT INTO test_cases (test_id, expected_category, healthcare) VALUES
+    ('TC59-Healthcare-Occupational-Therapy', 'occupational_therapy', 'occupational_therapist'),
+    ('TC60-Healthcare-Centre', 'community_health_center', 'centre');
+
+INSERT INTO test_cases (test_id, expected_category, leisure, sport) VALUES
+    ('TC61-Pitch-Soccer', 'soccer_field', 'pitch', 'soccer'),
+    ('TC62-Pitch-Tennis', 'tennis_court', 'pitch', 'tennis'),
+    ('TC63-Pitch-Generic', 'sport_field', 'pitch', NULL),
+    ('TC64-Sports-Centre-Swimming', 'swimming_pool', 'sports_centre', 'swimming'),
+    ('TC65-Sports-Centre-Generic', 'sports_complex', 'sports_centre', NULL);
+
+INSERT INTO test_cases (test_id, expected_category, amenity) VALUES
+    ('TC66-Vending-Machine', 'vending_machine', 'vending_machine');
+
+INSERT INTO test_cases (test_id, expected_category, man_made) VALUES
+    ('TC67-Works-Industrial', 'b2b_industrial_and_machine_service', 'works');
+
+INSERT INTO test_cases (test_id, expected_category, amenity) VALUES
+    ('TC68-University-General', 'college_university', 'university'),
+    ('TC69-Studio-General', 'recording_and_rehearsal_studio', 'studio'),
+    ('TC70-Training-General', 'specialty_school', 'training');
+
+INSERT INTO test_cases (test_id, expected_category, shop) VALUES
+    ('TC71-Dry-Cleaning', 'dry_cleaning', 'dry_cleaning'),
+    ('TC72-Trade-Wholesale', 'wholesaler', 'trade');
+
+INSERT INTO test_cases (test_id, expected_category, leisure) VALUES
+    ('TC73-Garden-General', 'garden', 'garden'),
+    ('TC74-Sports-Hall', 'sport_or_fitness_facility', 'sports_hall');
+
+INSERT INTO test_cases (test_id, expected_category, amenity) VALUES
+    ('TC75-Graveyard', 'cemetery', 'grave_yard');
+
+INSERT INTO test_cases (test_id, expected_category, office) VALUES
+    ('TC76-Office-Research', 'research_institute', 'research');
+
+INSERT INTO test_cases (test_id, expected_category, landuse) VALUES
+    ('TC77-Landuse-Industrial', 'b2b_industrial_and_machine_service', 'industrial');
+
+INSERT INTO test_cases (test_id, expected_category, healthcare) VALUES
+    ('TC78-Healthcare-Doctor', 'doctors_office', 'doctor'),
+    ('TC79-Healthcare-Dentist', 'dentist', 'dentist'),
+    ('TC80-Healthcare-Clinic', 'outpatient_care_facility', 'clinic');
+
+INSERT INTO test_cases (test_id, expected_category, craft) VALUES
+    ('TC81-Craft-Printer', 'printing_service', 'printer'),
+    ('TC84-Craft-Tailor', 'tailor', 'tailor'),
+    ('TC92-Craft-Upholsterer', 'furniture_reupholstery', 'upholsterer');
+
+INSERT INTO test_cases (test_id, expected_category, amenity) VALUES
+    ('TC82-Bus-Station', 'bus_station', 'bus_station'),
+    ('TC88-Amenity-CampSite', 'campground', 'camp_site'),
+    ('TC89-Amenity-Dojo', 'martial_arts_club', 'dojo'),
+    ('TC94-Amenity-Brothel', 'adult_entertainment_venue', 'brothel');
+
+INSERT INTO test_cases (test_id, expected_category, office) VALUES
+    ('TC83-Office-Association', 'civic_organization', 'association');
+
+INSERT INTO test_cases (test_id, expected_category, tourism) VALUES
+    ('TC85-Tourism-Artwork', 'sculpture_statue', 'artwork'),
+    ('TC99-Tourism-Tours', 'tour_operator', 'tours');
+
+INSERT INTO test_cases (test_id, expected_category, leisure, sport) VALUES
+    ('TC86-Leisure-Track-Athletics', 'track_and_field_track', 'track', 'athletics'),
+    ('TC87-Leisure-Track-Running', 'running_and_track', 'track', 'running');
+
+INSERT INTO test_cases (test_id, expected_category, leisure) VALUES
+    ('TC95-Leisure-Club', 'social_club', 'club'),
+    ('TC96-Leisure-Dance', 'dance_club', 'dance');
+
+INSERT INTO test_cases (test_id, expected_category, healthcare) VALUES
+    ('TC90-Healthcare-Rehab', 'rehabilitation_center', 'rehabilitation'),
+    ('TC91-Healthcare-Counseling', 'counseling', 'counselling');
+
+INSERT INTO test_cases (test_id, expected_category, man_made) VALUES
+    ('TC93-ManMade-Monitoring', 'monitoring_station', 'monitoring_station');
+
+INSERT INTO test_cases (test_id, expected_category, shop) VALUES
+    ('TC97-Shop-Food', 'grocery_store', 'food'),
+    ('TC98-Shop-General', 'convenience_store', 'general');
+
 -- Evaluate categories using the production resolve_poi_category macro
 CREATE TEMP TABLE evaluated AS
 SELECT 
@@ -183,7 +306,8 @@ SELECT
         t.cuisine, t.station, t.religion, t.denomination,
         t.information, t.name,
         t.man_made, t.emergency,
-        t.highway, t.landuse
+        t.highway, t.landuse,
+        t.sport
     ) AS actual_category
 FROM test_cases t;
 
@@ -510,7 +634,7 @@ SELECT
     CASE 
         WHEN bakery_cafe = ['bakery']
          AND list_sort(pizza_italian) = ['italian', 'pizza', 'pizza_delivery_service', 'restaurant']
-         AND list_sort(sports_centre) = ['adventure_sports_center', 'fitness', 'sports_centre', 'swimming']
+         AND list_sort(sports_centre) = ['fitness', 'sports_centre', 'swimming']
          AND plain_restaurant = CAST([] AS VARCHAR[])
         THEN '[OK] Alternate categories resolution passed: secondary place tags, cuisines, and sports extracted'
         ELSE error('ALTERNATE CATEGORIES RESOLUTION FAILED!')

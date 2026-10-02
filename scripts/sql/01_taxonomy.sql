@@ -56,6 +56,30 @@ SELECT {
             ORDER BY sub_val, overture_cat ASC
         )
     ),
+    'pitch_sport_map': (
+        SELECT MAP(list(sub_val), list(overture_cat)) FROM (
+            SELECT DISTINCT ON (sub_val) sub_val, overture_cat
+            FROM category_rules
+            WHERE primary_key = 'leisure' AND primary_val = 'pitch' AND sub_key = 'sport'
+            ORDER BY sub_val, overture_cat ASC
+        )
+    ),
+    'sports_centre_map': (
+        SELECT MAP(list(sub_val), list(overture_cat)) FROM (
+            SELECT DISTINCT ON (sub_val) sub_val, overture_cat
+            FROM category_rules
+            WHERE primary_key = 'leisure' AND primary_val = 'sports_centre' AND sub_key = 'sport'
+            ORDER BY sub_val, overture_cat ASC
+        )
+    ),
+    'track_sport_map': (
+        SELECT MAP(list(sub_val), list(overture_cat)) FROM (
+            SELECT DISTINCT ON (sub_val) sub_val, overture_cat
+            FROM category_rules
+            WHERE primary_key = 'leisure' AND primary_val = 'track' AND sub_key = 'sport'
+            ORDER BY sub_val, overture_cat ASC
+        )
+    ),
     'worship_rel_denom_map': (
         SELECT MAP(list(rel_denom), list(overture_cat)) FROM (
             SELECT DISTINCT ON (sub_val, sub3_val) sub_val || '=' || sub3_val AS rel_denom, overture_cat

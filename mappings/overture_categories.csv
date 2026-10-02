@@ -2812,3 +2812,6 @@ ziplining_center;[sports_and_recreation,sport_or_fitness_facility,adventure_spor
 zoo;[arts_and_entertainment,animal_attraction,zoo]
 zoo_exhibit;[arts_and_entertainment,animal_attraction,zoo,zoo_exhibit]
 zorbing_center;[active_life,sports_and_recreation_venue,zorbing_center]
+vending_machine;[services_and_business,automated_teller_or_kiosk,vending_machine]
+ticket_vending_machine;[services_and_business,automated_teller_or_kiosk,ticket_vending_machine]
+monitoring_station;[services_and_business,environmental_or_ecological_service,monitoring_station]

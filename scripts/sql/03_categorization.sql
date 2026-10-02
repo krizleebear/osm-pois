@@ -7,7 +7,8 @@ CREATE OR REPLACE MACRO resolve_poi_category(
     p_cuisine, p_station, p_religion, p_denomination,
     p_information := NULL, p_name := NULL,
     p_man_made := NULL, p_emergency := NULL,
-    p_highway := NULL, p_landuse := NULL
+    p_highway := NULL, p_landuse := NULL,
+    p_sport := NULL
 ) AS
 COALESCE(
     -- 1. Cuisine-specific restaurant match (e.g. amenity=restaurant,cuisine=italian -> italian_restaurant)
@@ -18,7 +19,19 @@ COALESCE(
     CASE WHEN p_railway = 'station' AND p_station IS NOT NULL THEN
         getvariable('taxonomy_lookup').station_map[p_station]
     END,
-    -- 3. Place of worship denomination & religion subtag match (e.g. amenity=place_of_worship,religion=christian,denomination=catholic -> catholic_church)
+    -- 3. Sports subtag match for pitch (e.g. leisure=pitch,sport=soccer -> soccer_field)
+    CASE WHEN p_leisure = 'pitch' AND p_sport IS NOT NULL THEN
+        getvariable('taxonomy_lookup').pitch_sport_map[split_part(p_sport, ';', 1)]
+    END,
+    -- 4. Sports subtag match for sports_centre (e.g. leisure=sports_centre,sport=shooting -> shooting_range)
+    CASE WHEN p_leisure = 'sports_centre' AND p_sport IS NOT NULL THEN
+        getvariable('taxonomy_lookup').sports_centre_map[split_part(p_sport, ';', 1)]
+    END,
+    -- 5. Sports subtag match for track (e.g. leisure=track,sport=running -> running_and_track)
+    CASE WHEN p_leisure = 'track' AND p_sport IS NOT NULL THEN
+        getvariable('taxonomy_lookup').track_sport_map[split_part(p_sport, ';', 1)]
+    END,
+    -- 6. Place of worship denomination & religion subtag match (e.g. amenity=place_of_worship,religion=christian,denomination=catholic -> catholic_church)
     CASE WHEN p_amenity = 'place_of_worship' THEN
         COALESCE(
             -- 3-tag match: amenity=place_of_worship, religion=..., denomination=...
@@ -35,7 +48,7 @@ COALESCE(
             END
         )
     END,
-    -- 4. Primary tag matches from deterministic rule table
+    -- 6. Primary tag matches from deterministic rule table
     getvariable('taxonomy_lookup').primary_map['amenity=' || p_amenity],
     getvariable('taxonomy_lookup').primary_map['shop=' || p_shop],
     -- Tourism resolution: resolve information subtags specially, else query primary_rules

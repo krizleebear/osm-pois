@@ -286,7 +286,8 @@ COPY (
                 f.cuisine, f.station, f.religion, f.denomination,
                 f.information, f.name,
                 f.man_made, f.emergency,
-                f.highway, f.landuse
+                f.highway, f.landuse,
+                f.sport
             ) AS main_category
         FROM raw_features f
     ),
