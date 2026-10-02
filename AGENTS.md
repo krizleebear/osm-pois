@@ -108,6 +108,13 @@ When modifying or generating code in this repository, you **MUST** follow these 
     * `parent_osm_id`: Primary POI member of the relation (e.g. the parking area `'osm:way/307701132'`), evaluated distinctly from child access points.
     * `parent_feature_kind`: Kind or category of the parent POI (e.g. `'parking'`, `'site'`, `'building'`).
     * `access_type`: Dedicated access point classification (`'parking'`, `'transit'`, `'pedestrian'`, `'delivery'`, `'emergency'`), resolved via macro `resolve_access_type(...)`. Evaluates to `NULL` for standard non-access POIs.
+13. **Deterministic Baseline Rule & Subtag Fallback Invariant**:
+    * In `mappings/overture_to_osm_categories.csv`, whenever specialized subtag rules are introduced for an OSM tag (e.g. `leisure=track,sport=motor` or `tourism=artwork,artwork_type=mural`), an explicit, non-subtagged baseline rule (`has_subtag = 0`, e.g. `track_and_field_track;leisure=track` or `sculpture_statue;tourism=artwork`) **MUST** be defined.
+    * Multiple baseline rules mapping the exact same OSM primary tag (`has_subtag = 0`) to different Overture categories are strictly forbidden, as deterministic alphabetical ordering (`ORDER BY has_subtag ASC, overture_cat ASC`) will cause mass misclassifications (e.g. `bus_station` colliding with `airport_shuttles`).
+    * Disambiguate competing rules using explicit secondary tags (e.g. `shuttle=yes`, `association=agriculture`, `tailor=gentlemen`).
+14. **Mapping & Taxonomy Deduplication Invariant**:
+    * Both `mappings/overture_to_osm_categories.csv` and `mappings/overture_categories.csv` must remain strictly free of duplicate lines and redundant category definitions.
+    * Every run of `./tests/run_unit_tests.sh` executes automated integrity assertions (`duplicate_mapping_check` and `duplicate_taxonomy_check`) that immediately fail if duplicates are introduced.
 
 ---
 
@@ -138,114 +145,18 @@ To ensure consistent pipeline execution, reproducible releases, and clean Git wo
    - Before committing pipeline modifications or scripts, verify execution inside the local Docker container environment (`ghcr.io/krizleebear/osm2parquet:v1.0.10`) to prevent missing-dependency failures in CI runners.
 10. **Workspace Boundary Scoping**:
     - Limit all grep and file searches strictly to active workspace directories without traversing parent directories.
-11. **Mandatory Pipeline YAML Syntax Pre-Verification**:
-    - Before committing modifications to pipeline definition files (`.yml`), validate full YAML structural parsing inside Docker or local Python (e.g. `python3 -c "import yaml; yaml.safe_load(open('azure-pipelines.yml'))"`). Commits with unverified YAML syntax are strictly prohibited.
-12. **Azure DevOps Job Container Entrypoint Safety**:
-    - Docker images intended for Azure DevOps job containers (`container: <image>`) must NOT define an exec-form `ENTRYPOINT` that exits on unknown arguments (such as `ENTRYPOINT ["/app/entrypoint.sh"]`), because Azure DevOps starts job containers with `sleep infinity`. Use `CMD ["/bin/bash"]` in the Dockerfile and invoke processing scripts explicitly in pipeline steps.
-13. **Docker Schema 2 Manifest Requirement for Container Registries**:
-    - Container images pushed to Docker Hub or `mirror.gcr.io` consumption must be built in Docker Schema 2 format (`application/vnd.docker.distribution.manifest.v2+json`) using standard `docker build` or `docker buildx build --provenance=false`. Modern OCI attestation/provenance blobs cause `unknown blob` 404 errors on `mirror.gcr.io`.
-14. **DuckDB Script Template Substitution Invariant**:
-    - DuckDB `COPY ... TO` statements require string literal paths. Do not attempt `getvariable()` inside `COPY TO`. Use `sed` token substitution (`__INPUT_JSONL__`, `__OUTPUT_PARQUET__`, `__COUNTRY_CODE__`, `__REPO_ROOT__`) on SQL templates before piping into `duckdb`.
-15. **Azure DevOps Boolean & Parameter Condition Syntax**:
-    - In Azure DevOps task/job/stage `condition:` expressions, template parameters are NOT accessible directly as runtime variables (`parameters.x`) and MUST be evaluated inside template expressions: `${{ eq(parameters.x, true) }}`. Referencing raw `parameters.x` outside of `${{ }}` causes `Unrecognized value: 'parameters'` errors at pipeline initialization.
-    - Do not use string expansion like `eq('${{ parameters.x }}', 'true')` because boolean parameters evaluate at template expansion time to C# capitalized strings (`'True'` / `'False'`), causing checks against lowercase `'true'` to fail silently. Always wrap the boolean expression in `${{ eq(parameters.x, true) }}`.
-    - In Bash scripts, handle both `"false"` and `"False"` because template expansion converts boolean false to `"False"`.
-16. **Azure DevOps String Parameter Defaults (`latest` / `auto`)**:
-    - In Azure DevOps manual run dialogs, string parameters treat empty string values as invalid/required in the UI modal. String parameters (like `downloadBuildId`) must default to `'latest'` or `'auto'`, and conditions must support `'latest'`, `'auto'`, and custom build IDs.
-17. **Downstream Stage Dependency Safety (`condition: succeeded('<stage>')`)**:
-    - Downstream stages (such as release or aggregation) that depend on upstream parallel matrix jobs MUST use `condition: succeeded('<stage>')`. Using parameterless `succeeded()` causes the stage to be skipped if any upstream stage was skipped via conditional parameters. Never use `condition: always()` on final bundling/release stages, as upstream failure would trigger incomplete artifact archiving.
-18. **Container Registry Mirrors & Upstream Image Synchronization**:
-    - Preserve primary registry configurations (GHCR) and fallback mirrors (`mirror.gcr.io`) in pipeline definitions. Whenever the base container image (`osm2parquet`) is updated, downstream pipeline definitions (`azure-pipelines.yml`) must immediately reference the new tag.
-19. **Feature Branch Pipeline Testing**:
-    - Azure DevOps pipelines can be triggered directly from feature branches. For major pipeline refactorings or matrix tests, work and test on a dedicated feature branch first before merging to `main`.
-20. **Fast-Fail CI Preflight Invariant**:
-    - Never launch long-running or matrix-heavy pipeline stages without an initial fast (<30s) preflight check or stage. Validate pipeline YAML syntax and execute the fast unit test suite (`./tests/run_unit_tests.sh`) before heavy runner compute is consumed.
-21. **Guaranteed Artifact Existence Invariant**:
-    - Azure DevOps `PublishPipelineArtifact` tasks fail with runner warnings if the target file does not exist on disk. Export jobs and post-processing steps must ensure all declared artifact targets exist (touching empty fallback files if necessary) to keep build results 100% clean and green.
-22. **Non-Breaking Pipeline Quality Audits (`##vso[task.logissue type=warning]`)**:
-    - Post-processing data audits (such as category coverage checks, feature count assertions, or empty dataset checks) should emit native Azure DevOps warning annotations (`echo "##vso[task.logissue type=warning]..."`) and run with `continueOnError: true` unless hard-failing is strictly required. This highlights anomalies prominently in the Azure DevOps run summary without breaking long-running packaging pipelines.
-23. **Modular & Testable Validation Tooling**:
-    - Complex verification steps must never be written as long inline Bash loops inside pipeline YAML. Implement them as dedicated, standalone scripts (e.g. in `tests/` or `scripts/`) with accompanying test cases runnable in local Docker environments.
-24. **Long-Form CLI Parameters & Download Resilience Invariant**:
-    - Always use explicit, readable long-form parameters in pipeline scripts (e.g., `--continue-at -` instead of `-C -`).
-    - Large external file downloads (such as Geofabrik PBF extracts) must specify stall timeouts (`--speed-limit 10240 --speed-time 30`), resume capabilities (`--continue-at -`), and emit lightweight background progress heartbeats to prevent silent runner hangs.
-25. **1-Pass PBF Extraction & Zero-Disk Stream Performance Invariant**:
+11. **1-Pass PBF Extraction & Zero-Disk Stream Performance Invariant**:
     - Large raw PBF files must be scanned only ONCE. Avoid multiple redundant reading passes over multi-gigabyte PBF extracts. Use `osmium export` or `osmium tags-filter` streaming directly through named pipes (`mkfifo`) into DuckDB to eliminate intermediate disk I/O.
-26. **Osmium Export ID & Provenance Configuration Invariant**:
-    - `osmium export` omits `@id`, `@version`, and `@timestamp` attributes by default unless `--config` or `-a type,id,version,timestamp` is explicitly passed. All place export commands must pass `-a type,id,version,timestamp` (or `--attributes=type,id,version,timestamp`) to preserve `osm_id`, feature version, and edit timestamps for provenance.
-27. **Stream File Format Conventions (`.geojsonseq` vs `.jsonl`) & Vectorized DuckDB Ingestion**:
-    - `*.geojsonseq`: Strictly adheres to RFC 8142 (GeoJSON Text Sequences) where each line is a full standard GeoJSON Feature object (`{"type": "Feature", "geometry": {...}, "properties": {...}}`). Designed for spatial streaming.
-    - `*.jsonl`: Formatted as newline-delimited flattened tabular records. Designed as high-throughput, columnar-ready ETL streams for direct vectorized ingestion via DuckDB `read_json()`. Tabular JSONL streams must retain `.jsonl` and never be misnamed `.geojsonseq` as they lack GeoJSON Feature wrappers.
-28. **Multi-Extract Feature Deduplication Invariant**:
-    - When consolidating multiple regional extracts into a single per-country GeoParquet file (e.g. Spain + Canary Islands), DuckDB consolidation queries must deduplicate shared features using `ROW_NUMBER() OVER (PARTITION BY id ORDER BY ...)` or deterministic precedence.
-29. **GitHub Release 2 GiB Asset Size Limit & GeoParquet Partitioning**:
-    - GitHub Releases enforce a strict hard limit of 2 GiB (2,147,483,648 bytes) per uploaded asset. Regional GeoParquet files must stay safely under 2.0 GiB (partitioning large countries if necessary).
-30. **Evidence-Based Issue Analysis & Remote Diagnostics (DuckDB + httpfs / S3)**:
-    - Never assume an issue is fixed or make claims based solely on commit history, code reviews, or theoretical assumptions. Always gather concrete empirical evidence by directly querying live release artifacts or test outputs.
-    - Use DuckDB with `httpfs` to query remote GitHub Release assets or S3 buckets directly (`duckdb -c "INSTALL httpfs; LOAD httpfs; SELECT ... FROM 'https://...'"`).
-    - When reporting or investigating anomalies across upstream/downstream boundaries, provide reproducible SQL queries against the exact release dataset to eliminate ambiguity and immediately isolate root causes.
-31. **Machine-Readable Parquet Metadata & Multi-Tier Attribution Invariant**:
-    - Every exported GeoParquet asset must embed full provenance and legal attribution directly into its file footer via DuckDB `KV_METADATA` (`source`, `origin`, `dataset`, `attribution`, `attribution_url`, `license`, `license_url`, `copyright`, `schema`, `schema_url`, `schema_license`, `schema_license_url`, `schema_attribution`, `compiler`, `compiler_version`, `country_code`, `exported_at`).
-    - Automated integration tests (`tests/test_conversion.sh`) assert the non-empty presence of `attribution`, `license`, `source`, `compiler`, `country_code`, `schema_license`, and `schema_attribution`.
-    - Downstream tools, UI viewers (e.g. `viewer/index.html`), release notes, and documentation must display clear attribution:
-      1. OpenStreetMap data conforming to ODbL 1.0 Section 4.3:
-         > **"Data © OpenStreetMap contributors, available under the Open Database License (ODbL)."**
-         with hyperlinked text pointing to [https://www.openstreetmap.org/copyright](https://www.openstreetmap.org/copyright) and [https://opendatacommons.org/licenses/odbl/](https://opendatacommons.org/licenses/odbl/).
-      2. Overture Maps Foundation schema specification conforming to CC-BY-4.0 Section 3(a):
-         > **"Schema specification © Overture Maps Foundation, licensed under CC-BY-4.0."**
-         with hyperlinked text pointing to [https://overturemaps.org/schema/](https://overturemaps.org/schema/) and [https://creativecommons.org/licenses/by/4.0/](https://creativecommons.org/licenses/by/4.0/).
-32. **DuckDB JSONPath & String Quoting Invariant**:
-    - In DuckDB `.sql` files, double quotes within single-quoted string literals must NOT be escaped with backslashes. Use `'$."' || k || '"'`, never `'$.\"' || k || '\"'`.
-    - DuckDB does not treat backslash as an escape character in standard string literals. Including `\` causes DuckDB to pass a literal backslash into `json_extract_string`, which silently breaks JSONPath key lookup and returns `NULL`.
-33. **Public Repository Transition & Legal Compliance Invariant**:
-    - Prior to transitioning private repositories to public or publishing open-source releases:
-      1. **Multi-Tier Licensing & Disclaimers**:
-         - Verify that `LICENSE.md` and `README.md` clearly delineate all four distinct intellectual property tiers:
-           - **Pipeline Code**: MIT License.
-           - **OSM Data & Parquet Output**: Open Database License (ODbL 1.0) with mandatory attribution and Share-Alike requirements for downstream consumers.
-           - **Category Mappings**: MIT License with Cadence Maps (OST) attribution.
-           - **Schema Specification**: Creative Commons Attribution 4.0 International (CC-BY-4.0) with Overture Maps Foundation attribution.
-      2. **Trademark & Non-Affiliation Disclaimer**:
-         - Include an explicit non-affiliation clause in both `LICENSE.md` and `README.md` confirming that "OpenStreetMap" and "Overture Maps" are trademarks of their respective foundations (OSMF and Joint Development Foundation) and that the project is an independent open-source tool.
-      3. **Git History Privacy & Security Audit**:
-         - Verify via `git log -p` and author log that zero tokens, secrets, personal API keys, or private email addresses exist in commit history.
-         - Confirm that no raw binary dumps (`*.pbf`, `*.parquet`) are tracked in git history.
-      4. **Container Registry Public Visibility**:
-         - Ensure base container images on GHCR (e.g. `ghcr.io/krizleebear/osm2parquet:vX.Y.Z`) have their package visibility configured to **Public**, allowing unauthenticated pulls by external contributors and CI runners.
-34. **DuckDB & Arrow Decimal / BLOB Serialization Invariant**:
-    - **DuckDB KV Metadata BLOB Keys**: In DuckDB, `parquet_kv_metadata()` returns `key` and `value` as `BLOB`. When consumed through DuckDB-Wasm or Arrow IPC in JavaScript, queries must explicitly cast `SELECT CAST(key AS VARCHAR) AS k, CAST(value AS VARCHAR) AS v` (with defensive `TextDecoder` decoding) to prevent JavaScript object keys from collapsing into `"[object Uint8Array]"`, which causes silent key collisions and missing metadata.
-    - **Confidence & Float Scaling (Decimal vs Double)**:
-      DuckDB `round(..., 2)` defaults to `DECIMAL(11,2)`. In Apache Arrow IPC, decimals are serialized as raw unscaled integers (e.g. `99` for `0.99`), producing a 100x magnification error (`9900%`) in JavaScript frontends. All normalized ratio and confidence macro outputs must explicitly cast to `::DOUBLE` matching Overture Places schema, and frontend consumers must defensively clamp and scale values (`confVal > 1.0 ? confVal / 100.0 : confVal`).
-35. **Spatial Partitioning & Transparent Parquet Merge Invariant (Zero Downstream Breaking Changes)**:
-    - **Trigger & Scope**: When an OSM extract is too massive for single-pass streaming within runner RAM constraints (e.g. continental US with 84M+ nodes and 5M+ POIs), the conversion pipeline must partition the extract spatially into bounded sub-regions (e.g. West, Central, East).
-    - **Polygon Integrity (`--strategy=complete_ways`)**: All sub-extracts must be generated with `osmium extract -b ... --strategy=complete_ways`. Never cut polygon features or discard relation geometries at bounding-box borders.
-    - **Strict Deduplication by Representative Point**: In DuckDB, features must be partitioned using mutually exclusive bounding intervals on `ST_PointOnSurface(geometry)` (e.g. `ST_X(geometry) < -100`, `ST_X >= -100 AND ST_X < -85`, `ST_X >= -85`). Because every point and polygon resolves to exactly one representative surface coordinate, this guarantees **zero cut geometries and zero duplicate POI records across partitions**.
-    - **Transparent Parquet Merge**: If the combined GeoParquet output remains safely below the 2.0 GiB GitHub Release ceiling (~380 MB for US), the pipeline runner must merge the partition Parquet files back into the canonical single file (`US_us.places.parquet`) via DuckDB `COPY (SELECT * FROM read_parquet([...])) TO ...`. 
-    - **Contract Invariance (Upstream & Downstream)**: Never alter upstream download definitions (`osm-download-pipeline.yml`) or require downstream geocoders/APIs to adapt to fragmented files when a transparent, streaming merge inside the runner can fulfill the contract seamlessly.
-    - **Runner Encapsulation**: Encapsulate partitioning, per-partition memory-bounded conversion, and merge execution cleanly inside `scripts/entrypoint.sh` so CI/CD pipeline YAML files (`azure-pipelines.yml`, `templates/convert-steps.yml`) require zero special-casing or matrix branching.
-36. **Streaming Memory Optimization & Subquery Cartesian Product Invariant**:
-    - **Session Variable Taxonomy Lookup (`getvariable`)**:
-      Never use scalar subqueries like `(SELECT lookup FROM taxonomy_lookup)` inside row-level expression macros or `SELECT` lists. DuckDB's query planner evaluates un-correlated scalar subqueries by generating chained `CROSS_PRODUCT` and `HASH_GROUP_BY` operators across vector chunks, buffering streaming records in RAM and causing OOM. Always cache static configuration maps in a DuckDB session variable (`SET VARIABLE taxonomy_lookup = (SELECT lookup FROM taxonomy_lookup);`) and access them via `getvariable('taxonomy_lookup')`, which ensures a 100% streaming physical plan composed exclusively of `PROJECTION` operators.
-    - **Disk-Backed Osmium Node Cache (`-i sparse_file_array`)**:
-      For large country extracts, `osmium export` default `-i flex_mem` keeps all node coordinates uncompressed in memory (e.g. 1.6+ GB RAM for US 84M nodes). Always specify a disk-backed node cache index `-i "sparse_file_array,${TMP_DIR}/osmium_idx.tmp"` in `scripts/entrypoint.sh` to keep Osmium process memory strictly bounded (< 800 MB).
-    - **Multipolygon Buffer Overhead & Reader Memory Floor (`maximum_object_size`)**:
-      Massive boundary features (such as national parks or nature reserves in large country extracts like the US) can produce single GeoJSON feature strings exceeding 32 MB (up to ~38+ MB). However, `read_json(..., maximum_object_size=N)` causes DuckDB's JSON reader to pre-allocate internal stream buffers sized at 2 × N. At N = 256 MB, DuckDB allocates ~384–512 MB per buffer, setting a huge fixed memory floor (~1120 MB RSS) and requiring ~395 MiB atomic chunk allocations. At N = 64 MB (`67108864`), the reader allocates 128 MB (`127.9 MiB`) chunks and has a much lower memory floor (~490 MB RSS), while remaining safely above the largest single GeoJSON record ever observed (~38 MB multipolygon relations on the continental US). For regional extracts like Germany (where the largest feature is only ~267 KB), 64 MB provides massive headroom. The value is exposed via `__MAX_OBJECT_SIZE__` and resolved from `OSM_POIS_MAX_OBJECT_SIZE` in `scripts/entrypoint.sh`.
-    - **Bounded Execution Concurrency & Parquet Flushing**:
-      In memory-constrained CI/CD runners (7.0 GB limit), multi-threaded streaming multiplies JSON string parser buffers. Keep `SET threads = 1` during streaming ingestion, disable order preservation (`SET preserve_insertion_order = false`), disable external file caching (`SET enable_external_file_cache = false`), and configure aggressive Parquet row group memory bounds (`SET write_buffer_row_group_count = 1; SET write_buffer_row_group_memory_limit = '64MB';`).
-    - **Buffer Manager Dynamics & `max_memory` Sweet-Spot Calibration**:
-      DuckDB's BufferManager allocates memory in blocks and does not actively return freed memory to the OS during a long-running streaming query if current memory is below `max_memory`. On the full DE extract (8.3M OSM features → 3.18M places), DuckDB's active working set (JSON vectors, hash join table, row group buffers) requires ~4.5 GB peak RSS.
-      - **The Under-Allocation Trap**: Capping `max_memory` too tightly (e.g. 2600 MB, 3400 MB, or 3800 MB) does *not* force DuckDB to gracefully use less memory. Instead, DuckDB fills its buffer pool up to `max_memory - atomic_chunk_size` (~3.4 GiB), at which point the next atomic 127.9 MiB buffer allocation from `read_json` or the Parquet writer fails with an internal BufferManager `OutOfMemoryError: failed to allocate data of size 127.9 MiB (3.4 GiB/3.5 GiB used)`, despite gigabytes of free physical host RAM.
-      - **The Over-Allocation Trap**: Setting `max_memory` too high (> 5200 MB) risks triggering the Linux container OOM killer (Exit Code 137 / SIGKILL) on Azure DevOps runners when combined with Osmium's peak memory.
-      - **Calibrated Production Value**: `SET max_memory = '4800MB';`. In a 7.0 GB Azure DevOps container:
-        * Osmium (`osmium export -i sparse_file_array`): ~116 MB during node export, peaks at ~730 MB when resolving relation geometries from the disk index.
-        * DuckDB (`read_json`, projections, relations join, Parquet write): peaks at ~4.5–4.7 GB RSS.
-        * Combined peak container RSS: ~5.4 GB / 7.0 GB, leaving ~1.6 GB headroom for the Linux kernel, OS page cache, and pipe buffers.
-    - **Mandatory 100% Streaming Pipeline (Zero Blocking Window Operators)**:
-      Global window functions (such as `ROW_NUMBER() OVER (PARTITION BY ... ORDER BY ...)` in deduplication CTEs) are blocking pipeline breakers in DuckDB. They force DuckDB to collect, materialize, and sort the entire dataset (all 3.18 million wide POI rows with complex structs and tags maps) in memory before outputting a single Parquet row group. This defeated streaming and caused the initial CI OOM (`failed to allocate data of size 394.9 MiB (3.7 GiB/3.9 GiB used)`). Any spatial or identity deduplication must be handled without global blocking window operators.
-    - **Streaming Relation Lookups Without Intermediate Materialization**:
-      Rather than materializing an intermediate temporary table (`CREATE TEMP TABLE raw_rel_lines`), the relation index table `osm_relation_members` must stream directly from the OPL file via `read_csv('__INPUT_RELATIONS_OPL__', ...)`. This avoids retaining millions of raw CSV strings in memory before the main COPY query even begins.
-    - **Row Filtering Must Happen Before Geometry Deserialisation**:
-      Never let `ST_GeomFromGeoJSON()` run on every streamed feature. Apply `is_poi_candidate(properties)` and `geometry IS NOT NULL` directly inside the `read_json` scan so non-POI features are discarded while still in raw JSON.
+12. **Token-Efficient Tabular Data Analysis (DuckDB-First Invariant)**:
+    - When inspecting or auditing large tabular files (`mappings/*.csv`, `*.parquet`, `*.jsonl`), agents must **NEVER** dump the entire file into the prompt context or rewrite entire files from scratch.
+    - Use the DuckDB CLI directly from bash (`duckdb -c "SELECT ... FROM read_csv('mappings/...') ..."`) to filter, aggregate, group, and inspect data out-of-core, returning only concise diagnostic results.
+    - Execute modifications surgically using targeted line replacements (`replace_file_content` with `grep -n` target line identification) rather than wholesale file rewrites, minimizing token consumption and preventing context truncation.
+13. **Public Repository Transition & Multi-Tier Licensing**:
+    - Verify that `LICENSE.md` and `README.md` clearly delineate all four distinct intellectual property tiers: Pipeline Code (MIT), OSM Data & Parquet Output (ODbL 1.0), Category Mappings (MIT), Schema Specification (CC-BY-4.0).
+    - Ensure zero secrets, API keys, or private emails are in git history, and no raw binary dumps (`*.pbf`, `*.parquet`) are tracked.
+14. **Specialized Architecture & Deep Troubleshooting References**:
+    - **CI/CD Pipeline & Runner Memory Tuning**: Read [`docs/azure_pipelines.md`](file:///app/docs/azure_pipelines.md) for Azure DevOps parameter conditions, container entrypoint rules, BufferManager sweet-spot calibration (`max_memory = '4800MB'`), and spatial partitioning.
+    - **DuckDB, Arrow IPC & CLI Gotchas**: Read [`docs/duckdb_gotchas.md`](file:///app/docs/duckdb_gotchas.md) for CLI flags (`-dark-mode -no-stdin`), `.read` dot-command rules, Arrow IPC decimal/BLOB serialization, JSONPath quoting, and remote S3 streaming.
 
 ---
 
@@ -294,28 +205,8 @@ duckdb -dark-mode -no-stdin \
   -c "SELECT count(*) FROM taxonomy_lookup;"
 ```
 
-> [!IMPORTANT]
-> - **DuckDB Terminal Probe Timeout (> 5s)**: Always use `-dark-mode -no-stdin` when invoking `duckdb` in CLI commands or test scripts to prevent terminal background color detection timeouts.
-> - **Input Redirection vs `.read`**: Because `-no-stdin` disables standard input, piping (`duckdb -no-stdin < script.sql`) closes stdin immediately and exits 0 without running queries. Always execute scripts via `-c ".read script.sql"`.
-> - **`.read` is a CLI Dot-Command (NOT SQL)**: `.read` cannot be chained with SQL statements inside a single `-c` flag (e.g. `duckdb -c "SET x=1; .read file.sql"` fails with `Parser Error: syntax error at or near '.'`). Pass separate `-c` flags for each command, or place all commands inside a `.sql` file loaded via a single `-c ".read file.sql"`.
-> - **Docker Container Git `safe.directory`**: Because dev containers mount `~/.gitconfig` read-only (`:ro`), `git config --global` fails with resource busy. Always configure `ENV GIT_CONFIG_PARAMETERS="'safe.directory=/app'"` in the Dockerfile / docker-compose environment.
-
-### Querying Official Overture Data Directly (S3 Streaming)
-
-For coverage benchmarks or taxonomy comparisons against official Overture releases, stream directly via DuckDB without downloading full dumps:
-
-```sql
--- Configure anonymous access to Overture public S3 bucket
-CREATE SECRET overture (TYPE S3, KEY_ID '', SECRET '', REGION 'us-west-2');
-
--- Leverage bbox metadata / part files for high-throughput spatial pruning (e.g. Germany is in part-00010 & part-00011):
-SELECT count(*), categories.primary
-FROM read_parquet('s3://overturemaps-us-west-2/release/2026-08-19.0/theme=places/type=place/*')
-WHERE bbox.xmin >= 5.86 AND bbox.xmax <= 15.04
-  AND bbox.ymin >= 47.27 AND bbox.ymax <= 55.06
-  AND addresses[1].country = 'DE'
-GROUP BY ALL;
-```
+> [!TIP]
+> For critical DuckDB CLI gotchas (`-dark-mode -no-stdin`, `.read` vs piping), Arrow IPC BLOB/Decimal serialization, and direct S3 streaming queries, see [`docs/duckdb_gotchas.md`](file:///app/docs/duckdb_gotchas.md).
 
 ---
 
