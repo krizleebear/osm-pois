@@ -88,7 +88,7 @@ ENV HOME=/home/ubuntu
 RUN cp -r /tmp/.duckdb-ext-cache /home/ubuntu/.duckdb && \
     chown -R ubuntu:ubuntu /home/ubuntu/.duckdb && \
     rm -rf /tmp/.duckdb-ext-cache && \
-    printf "INSTALL spatial;\nLOAD spatial;\n" > /home/ubuntu/.duckdbrc && \
+    printf ".highlight_mode dark\nINSTALL spatial;\nLOAD spatial;\n" | tee /home/ubuntu/.duckdbrc /root/.duckdbrc > /dev/null && \
     chown ubuntu:ubuntu /home/ubuntu/.duckdbrc && \
     sed -i 's|\\u@\\h: \\w|[osm-pois] \\w|g' /home/ubuntu/.bashrc /root/.bashrc
 

@@ -16,6 +16,8 @@ This document details critical engine-level gotchas, CLI flags, serialization in
   ```bash
   duckdb -dark-mode -no-stdin -c "..."
   ```
+  Alternatively, configure `~/.duckdbrc` with `.highlight_mode dark` (pre-configured in `.devcontainer/Dockerfile`), which loads before the terminal probe during initialization and completely bypasses the 5-second OSC 11 timeout.
+
 
 ### 1.2. Input Redirection Pitfall vs `.read`
 * **Symptom**: Piping SQL via stdin (`duckdb -no-stdin < script.sql`) exits immediately with code 0 without executing any queries.
