@@ -168,15 +168,23 @@ COPY (
                        format='newline_delimited', 
                        maximum_object_size=__MAX_OBJECT_SIZE__,
                        columns={'geometry': 'JSON', 'properties': 'JSON'})
-        WHERE is_poi_candidate(properties)
-          AND geometry IS NOT NULL
+        WHERE (
+            is_poi_candidate(properties)
+            OR (
+                json_extract_string(properties, '$.building') IN ('office', 'school', 'kindergarten', 'college', 'university', 'hospital', 'civic', 'government', 'fire_station', 'train_station', 'transportation', 'hotel', 'sports_hall', 'stadium', 'retail', 'commercial', 'industrial', 'warehouse')
+                AND json_extract_string(properties, '$.name') IS NOT NULL
+            )
+        )
+        AND geometry IS NOT NULL
     ),
     valid_geoms AS (
         SELECT 
             geom,
             properties
         FROM base_json
-        WHERE geom IS NOT NULL AND ST_IsValid(geom)
+        WHERE geom IS NOT NULL
+          AND ST_IsValid(geom)
+          AND is_poi_candidate(properties, ST_GeometryType(geom) IN ('POLYGON', 'MULTIPOLYGON'))
     ),
     raw_features AS (
         SELECT 
@@ -213,6 +221,7 @@ COPY (
                 json_extract_string(properties, '$."construction:leisure"')
             ) AS leisure,
             json_extract_string(properties, '$.office') AS office,
+            json_extract_string(properties, '$.building') AS building,
             json_extract_string(properties, '$.craft') AS craft,
             json_extract_string(properties, '$.healthcare') AS healthcare,
             json_extract_string(properties, '$.historic') AS historic,
@@ -287,7 +296,7 @@ COPY (
                 f.information, f.name,
                 f.man_made, f.emergency,
                 f.highway, f.landuse,
-                f.sport
+                f.sport, f.building
             ) AS main_category
         FROM raw_features f
     ),
@@ -298,7 +307,7 @@ COPY (
                 c.main_category,
                 c.amenity, c.shop, c.tourism, c.leisure, c.office,
                 c.craft, c.healthcare, c.historic, c.highway,
-                c.cuisine, c.sport, c.landuse
+                c.cuisine, c.sport, c.landuse, c.building
             ) AS alternate_categories
         FROM categorized c
     ),
