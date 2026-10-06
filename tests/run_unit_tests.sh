@@ -27,6 +27,10 @@ else
     echo "=== [OK] Unit Tests Completed in ${ELAPSED}s ==="
 fi
 
+# Verify the streaming physical plan of the production export query (FIFO stream must
+# never be materialized as a hash-join build side; see tests/test_streaming_plan.sh)
+"$SCRIPT_DIR/test_streaming_plan.sh"
+
 # Verify Azure Pipelines Touchstone DE + US architecture
 if [ -f "$REPO_ROOT/azure-pipelines.yml" ]; then
     if ! grep -q 'job: touchstone_germany' "$REPO_ROOT/azure-pipelines.yml"; then

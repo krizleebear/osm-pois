@@ -158,6 +158,16 @@ SELECT
 FROM ranked_members
 WHERE rel_rank = 1;
 
+-- STREAMING INVARIANT: Pin the hash-join build side to osm_relation_members.
+-- A named pipe has no file size, so DuckDB estimates the read_json() stream at only
+-- ~42 rows, while osm_relation_members holds ~154k rows on DE. Left to itself, the
+-- build_side_probe_side optimizer then swaps the LEFT JOIN below and builds the hash
+-- table over the ENTIRE POI stream, turning the streaming COPY into a full in-memory
+-- materialization (linear RSS growth until "failed to allocate ... (4.4 GiB/4.4 GiB used)"
+-- on DE/US). With the optimizer disabled, the written order is kept: the stream is the
+-- probe side (left) and the small relation index is the build side (right).
+SET disabled_optimizers = 'build_side_probe_side';
+
 -- Stream Osmium GeoJSON directly into Overture Places GeoParquet (Zero Intermediate Materialization)
 COPY (
     WITH base_json AS (
