@@ -8,7 +8,7 @@ CREATE OR REPLACE MACRO resolve_poi_category(
     p_information := NULL, p_name := NULL,
     p_man_made := NULL, p_emergency := NULL,
     p_highway := NULL, p_landuse := NULL,
-    p_sport := NULL
+    p_sport := NULL, p_building := NULL
 ) AS
 COALESCE(
     -- 1. Cuisine-specific restaurant match (e.g. amenity=restaurant,cuisine=italian -> italian_restaurant)
@@ -79,6 +79,8 @@ COALESCE(
     getvariable('taxonomy_lookup').primary_map['man_made=' || p_man_made],
     getvariable('taxonomy_lookup').primary_map['emergency=' || p_emergency],
     getvariable('taxonomy_lookup').primary_map['landuse=' || p_landuse],
+    CASE WHEN p_building = 'office' THEN 'corporate_or_business_office' END,
+    CASE WHEN p_building = 'school' THEN 'school' END,
     p_amenity,
     p_shop,
     CASE WHEN p_tourism = 'information' THEN p_information ELSE p_tourism END,
@@ -95,7 +97,7 @@ CREATE OR REPLACE MACRO resolve_alternate_categories(
     p_main_cat,
     p_amenity, p_shop, p_tourism, p_leisure, p_office,
     p_craft, p_healthcare, p_historic, p_highway,
-    p_cuisine, p_sport, p_landuse := NULL
+    p_cuisine, p_sport, p_landuse := NULL, p_building := NULL
 ) AS
 [
   x for x in list_distinct(
@@ -112,6 +114,8 @@ CREATE OR REPLACE MACRO resolve_alternate_categories(
         getvariable('taxonomy_lookup').primary_map['historic=' || p_historic],
         getvariable('taxonomy_lookup').primary_map['highway=' || p_highway],
         getvariable('taxonomy_lookup').primary_map['landuse=' || p_landuse],
+        CASE WHEN p_building = 'office' THEN 'corporate_or_business_office' END,
+        CASE WHEN p_building = 'school' THEN 'school' END,
         -- Mapped cuisine categories (up to 2 values)
         CASE WHEN p_cuisine IS NOT NULL THEN getvariable('taxonomy_lookup').cuisine_map[trim(split_part(p_cuisine, ';', 1))] END,
         CASE WHEN p_cuisine IS NOT NULL AND len(str_split(p_cuisine, ';')) >= 2 THEN getvariable('taxonomy_lookup').cuisine_map[trim(split_part(p_cuisine, ';', 2))] END,

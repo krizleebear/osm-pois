@@ -250,6 +250,32 @@ COALESCE(
     FALSE
 );
 
+-- Identify named, independently verifiable functional building areas that lack a conventional POI tag.
+-- Restrict this fallback to explicitly functional building types to avoid admitting generic building footprints.
+CREATE OR REPLACE MACRO is_named_functional_building(props, is_area := FALSE) AS
+COALESCE(
+    is_area
+    AND json_extract_string(props, '$.name') IS NOT NULL
+    AND json_extract_string(props, '$.name') != ''
+    AND list_contains(['office', 'school', 'kindergarten', 'college', 'university', 'hospital', 'civic', 'government', 'fire_station', 'train_station', 'transportation', 'hotel', 'sports_hall', 'stadium', 'retail', 'commercial', 'industrial', 'warehouse'], json_extract_string(props, '$.building'))
+    AND (
+        json_extract_string(props, '$.addr:street') IS NOT NULL
+        OR json_extract_string(props, '$.addr:postcode') IS NOT NULL
+        OR json_extract_string(props, '$.addr:city') IS NOT NULL
+        OR json_extract_string(props, '$.website') IS NOT NULL
+        OR json_extract_string(props, '$."contact:website"') IS NOT NULL
+        OR json_extract_string(props, '$.phone') IS NOT NULL
+        OR json_extract_string(props, '$."contact:phone"') IS NOT NULL
+        OR json_extract_string(props, '$.email') IS NOT NULL
+        OR json_extract_string(props, '$."contact:email"') IS NOT NULL
+        OR json_extract_string(props, '$.operator') IS NOT NULL
+        OR json_extract_string(props, '$.brand') IS NOT NULL
+        OR json_extract_string(props, '$.wikidata') IS NOT NULL
+        OR json_extract_string(props, '$.wikipedia') IS NOT NULL
+    ),
+    FALSE
+);
+
 -- Primary filter: determines whether an OSM feature qualifies as a POI candidate
 CREATE OR REPLACE MACRO is_poi_candidate(props, is_area := FALSE) AS
 COALESCE(
@@ -257,6 +283,8 @@ COALESCE(
     is_temporary_closed_landmark(props, is_area)
     -- Exception 2: named, search-relevant OSM area feature (Issue #2)
     OR is_search_relevant_area(props, is_area)
+    -- Exception 3: named, independently verifiable functional buildings
+    OR is_named_functional_building(props, is_area)
     OR (
         (
             json_extract_string(props, '$.name') IS NOT NULL 

@@ -113,7 +113,8 @@ CREATE TEMP TABLE test_cases (
     man_made VARCHAR DEFAULT NULL,
     emergency VARCHAR DEFAULT NULL,
     highway VARCHAR DEFAULT NULL,
-    landuse VARCHAR DEFAULT NULL
+    landuse VARCHAR DEFAULT NULL,
+    building VARCHAR DEFAULT NULL
 );
 
 INSERT INTO test_cases (test_id, expected_category, amenity) VALUES
@@ -295,6 +296,11 @@ INSERT INTO test_cases (test_id, expected_category, shop) VALUES
     ('TC97-Shop-Food', 'grocery_store', 'food'),
     ('TC98-Shop-General', 'convenience_store', 'general');
 
+INSERT INTO test_cases (test_id, expected_category, building) VALUES
+    ('TC102-Building-Office', 'corporate_or_business_office', 'office'),
+    ('TC103-Building-School', 'school', 'school'),
+    ('TC104-Building-Warehouse-Fallback', 'point_of_interest', 'warehouse');
+
 -- Evaluate categories using the production resolve_poi_category macro
 CREATE TEMP TABLE evaluated AS
 SELECT 
@@ -307,7 +313,7 @@ SELECT
         t.information, t.name,
         t.man_made, t.emergency,
         t.highway, t.landuse,
-        t.sport
+        t.sport, t.building
     ) AS actual_category
 FROM test_cases t;
 
@@ -501,7 +507,38 @@ SELECT
 FROM mock_area_poi_evaluated
 LIMIT 1;
 
--- Check 3.2d: Deduplication test of equivalent node and way representations (Issue #2 item 4)
+-- Check 3.2d: Named functional building fallback (Issue #3)
+CREATE TEMP TABLE mock_functional_building_input AS
+SELECT 301 AS id, '{"@type":"way","building":"office","name":"e.solutions","addr:street":"Frauenweiherstraße","addr:housenumber":"17","addr:city":"Erlangen","website":"https://www.esolutions.de"}'::JSON AS props, TRUE AS is_area
+UNION ALL
+SELECT 302 AS id, '{"@type":"way","building":"school","name":"Apian-Gymnasium Ingolstadt","addr:street":"Maximilianstraße","addr:housenumber":"25","addr:city":"Ingolstadt","contact:website":"http://www.apian.de"}'::JSON AS props, TRUE AS is_area
+UNION ALL
+SELECT 303 AS id, '{"@type":"way","building":"warehouse","name":"Logistics Hub","website":"https://example.test"}'::JSON AS props, TRUE AS is_area
+UNION ALL
+SELECT 304 AS id, '{"@type":"way","building":"residential","name":"Wohnhaus Nord","addr:street":"Hauptstraße"}'::JSON AS props, TRUE AS is_area
+UNION ALL
+SELECT 305 AS id, '{"@type":"way","building":"office","name":"Anonymous Office"}'::JSON AS props, TRUE AS is_area
+UNION ALL
+SELECT 306 AS id, '{"@type":"node","building":"school","name":"Point School","website":"https://example.test"}'::JSON AS props, FALSE AS is_area;
+
+CREATE TEMP TABLE mock_functional_building_evaluated AS
+SELECT
+    id,
+    is_poi_candidate(props, is_area) AS is_candidate,
+    is_named_functional_building(props, is_area) AS is_functional_building
+FROM mock_functional_building_input;
+
+SELECT
+    CASE
+        WHEN (SELECT list_sort(list(id)) FROM mock_functional_building_evaluated WHERE is_candidate) = [301, 302, 303]
+         AND (SELECT list_sort(list(id)) FROM mock_functional_building_evaluated WHERE is_functional_building) = [301, 302, 303]
+        THEN '[OK] Functional building fallback passed: verified office, school, and warehouse areas admitted; residential, unverified, and point features excluded'
+        ELSE error('FUNCTIONAL BUILDING FILTER FAILED: unexpected building POI retention!')
+    END AS functional_building_check
+FROM mock_functional_building_evaluated
+LIMIT 1;
+
+-- Check 3.2e: Deduplication test of equivalent node and way representations (Issue #2 item 4)
 CREATE TEMP TABLE mock_dedup_input AS
 SELECT 'osm:way/1001' AS id, 'Central Park' AS name, 'park' AS main_category, 7.4121 AS lon, 43.7121 AS lat, 0.85::DOUBLE AS confidence, 3 AS osm_version
 UNION ALL
