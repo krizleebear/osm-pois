@@ -108,10 +108,7 @@ if [ "$COUNTRY_CODE" = "US" ] && [ -z "$SPATIAL_FILTER" ]; then
     exit 0
 fi
 
-TMP_FIFO=$(mktemp -u /tmp/osm_export_XXXXXX.jsonl)
-TMP_SQL=$(mktemp /tmp/export_XXXXXX.sql)
 TMP_DIR=$(mktemp -d /tmp/duckdb_spill_XXXXXX)
-mkfifo "$TMP_FIFO"
 
 get_rss_kb() {
     local target_pid="$1"
@@ -180,8 +177,8 @@ stop_monitor() {
 
 cleanup() {
     stop_monitor
-    kill "$DUCKDB_PID" "$OSMIUM_PID" 2>/dev/null || true
-    rm -rf "$TMP_FIFO" "$TMP_SQL" "$TMP_DIR"
+    kill "$PYTHON_PID" 2>/dev/null || true
+    rm -rf "$TMP_DIR"
 }
 trap cleanup EXIT INT TERM
 
@@ -263,61 +260,44 @@ TMP_RELS_OPL="${TMP_DIR}/relations.opl"
 echo "[STAGE 1/4] Pre-filtering relations into lightweight OPL index..."
 osmium tags-filter -R "$INPUT_PBF" r/type=site,parking -f opl -o "$TMP_RELS_OPL" --overwrite 2>/dev/null || touch "$TMP_RELS_OPL"
 
-echo "[STAGE 2/4] Streaming Osmium export through named pipe directly into DuckDB..."
-(set -o pipefail; osmium export "$INPUT_PBF" -i "sparse_file_array,${TMP_DIR}/osmium_idx.tmp" --geometry-types=point,polygon --attributes=type,id,version,timestamp --output-format=geojsonseq | tr -d '\036' > "$TMP_FIFO") &
-OSMIUM_PID=$!
+echo "[STAGE 2/4] Streaming osmium export through chunked Python driver (chunk size: ${OSM_POIS_CHUNK_BYTES:-104857600} bytes)..."
+python3 "$SCRIPT_DIR/entrypoint.py" \
+  --input "$INPUT_PBF" \
+  --output "$OUTPUT_PARQUET" \
+  --relations-opl "$TMP_RELS_OPL" \
+  --tmp-dir "$TMP_DIR" \
+  --repo-root "$REPO_ROOT" \
+  --country-code "$COUNTRY_CODE" \
+  --spatial-filter "$SPATIAL_FILTER" \
+  --max-object-size "$MAX_OBJECT_SIZE" \
+  --chunk-bytes "${OSM_POIS_CHUNK_BYTES:-104857600}" \
+  --build-version "$BUILD_VERSION" \
+  --export-timestamp "$EXPORT_TIMESTAMP" &
+PYTHON_PID=$!
 
-sed \
-  -e "s|__INPUT_JSONL__|${TMP_FIFO}|g" \
-  -e "s|__INPUT_RELATIONS_OPL__|${TMP_RELS_OPL}|g" \
-  -e "s|__OUTPUT_PARQUET__|${OUTPUT_PARQUET}|g" \
-  -e "s|__COUNTRY_CODE__|${COUNTRY_CODE}|g" \
-  -e "s|__REPO_ROOT__|${REPO_ROOT}|g" \
-  -e "s|__BUILD_VERSION__|${BUILD_VERSION}|g" \
-  -e "s|__EXPORT_TIMESTAMP__|${EXPORT_TIMESTAMP}|g" \
-  -e "s|__TEMP_DIR__|${TMP_DIR}|g" \
-  -e "s|__SPATIAL_FILTER__|${SPATIAL_FILTER:-}|g" \
-  -e "s|__MAX_OBJECT_SIZE__|${MAX_OBJECT_SIZE}|g" \
-  "$SCRIPT_DIR/export_pois.sql" > "$TMP_SQL"
-
-duckdb -dark-mode -no-stdin -c ".read $TMP_SQL" &
-DUCKDB_PID=$!
-
-monitor_resources "$DUCKDB_PID" "$OSMIUM_PID" &
+monitor_resources "$PYTHON_PID" "$PYTHON_PID" &
 MONITOR_PID=$!
 
-wait "$DUCKDB_PID"
-DUCKDB_EXIT=$?
+set +e
+wait "$PYTHON_PID"
+PYTHON_EXIT=$?
+set -e
 stop_monitor
-
-wait "$OSMIUM_PID"
-OSMIUM_EXIT=$?
 
 cleanup
 trap - EXIT INT TERM
 
-if [ $DUCKDB_EXIT -ne 0 ]; then
-    if [ $DUCKDB_EXIT -eq 137 ]; then
+if [ $PYTHON_EXIT -ne 0 ]; then
+    if [ $PYTHON_EXIT -eq 137 ]; then
         echo "****************************************************************"
-        echo " [FATAL] DuckDB was killed by SIGKILL (Exit code 137)!"
+        echo " [FATAL] Python driver was killed by SIGKILL (Exit code 137)!"
         echo " Cause: Out-Of-Memory (OOM) killer terminated the process."
         echo " Diagnostics: Memory limit exceeded the available container RAM."
         echo "****************************************************************"
     else
-        echo "[FAIL] DuckDB export failed with exit code $DUCKDB_EXIT"
+        echo "[FAIL] Python streaming driver failed with exit code $PYTHON_EXIT"
     fi
-    exit $DUCKDB_EXIT
-fi
-
-if [ $OSMIUM_EXIT -ne 0 ]; then
-    if [ $OSMIUM_EXIT -eq 137 ]; then
-        echo "****************************************************************"
-        echo " [FATAL] Osmium export was killed by SIGKILL (Exit code 137)!"
-        echo "****************************************************************"
-    else
-        echo "[FAIL] Osmium export failed with exit code $OSMIUM_EXIT"
-    fi
-    exit $OSMIUM_EXIT
+    exit $PYTHON_EXIT
 fi
 
 echo "[STAGE 3/4] Stream conversion completed successfully."
