@@ -54,10 +54,24 @@ This document details critical engine-level gotchas, CLI flags, serialization in
   ```
 
 ### 2.2. JSONPath & String Quoting
+* **Scope**: Only applies to genuine JSONPath lookups (e.g. the `EXPLAIN` plan JSON in `tests/test_streaming_plan.sh`). Never build JSONPath strings for OSM `properties` — see §2.3.
 * **Invariant**: In DuckDB SQL, double quotes within single-quoted string literals must **NOT** be escaped with backslashes.
   * Correct: `'$."' || k || '"'`
   * Incorrect: `'$.\"' || k || '\"'`
 * **Explanation**: DuckDB does not treat backslash as an escape character in standard string literals. Including `\` causes DuckDB to pass a literal backslash into `json_extract_string`, which silently breaks JSONPath key lookup and returns `NULL`.
+
+### 2.3. Single-Pass Properties Parsing (`properties` is a MAP, never JSON)
+* **Invariant**: The GeoJSON `properties` column is declared as `MAP(VARCHAR, VARCHAR)` (never `JSON`) and every tag access is a map lookup:
+  * Correct: `props['amenity']`, `map_keys(props)`, `[e for e in map_entries(props) if NOT starts_with(e.key, '@')]`
+  * Incorrect: `json_extract_string(props, '$.amenity')`, `json_keys(props)`
+* **Why**: `json_extract_*` re-parses the full JSON document on *every* call. The transform performs ~230 static lookups plus key-iterating macros (`osm_name_keys`, `osm_raw_tags`, payment/lifecycle scans), so per-row cost becomes `#tags x document size`. On a single 100 MB Taiwan chunk this pushed the driver past the 4.4 GiB `max_memory` cap before `[CHUNK 1]` could ever be logged:
+  ```
+  [FATAL] Out of Memory Error: failed to allocate data of size 16.0 MiB (4.4 GiB/4.4 GiB used)
+  ```
+* **Measured** (real Taiwan extract, 28.9 MB filtered PBF): legacy JSON reader OOM-reproduced; MAP reader completed with a **12 s** vs **44 s** run and byte-identical output (254,730 POIs, `EXCEPT ALL` = 0/0, md5 `2e07b223b3e95e9b816646bd1ee745a2`). DE touchstone: 3,186,335 POIs equivalent both ways, 360 s → 169 s.
+* **Type semantics** (identical to `json_extract_string`): missing key → `NULL`; JSON numbers/booleans → `VARCHAR` (`'21911886'`, `'true'`); JSON `null` → `NULL`; nested object → its JSON text. Keys may contain `:`, `"` and CJK without quoting gymnastics: `props['disused:amenity']`, `props['fixme:"note"']`.
+* **Where the type must match**: `scripts/export_pois.sql` (FIFO view) and both `read_json` `columns=` sites in `scripts/entrypoint.py` — the transform view is bound once against `osm_json_src`, so bootstrap and per-chunk schemas must be identical or `CREATE VIEW` fails with an UnknownError.
+* **Guarded by**: `tests/test_memory_budget.sh` (peak-RSS budget on a tag-rich chunk; fails on the legacy reader: 2638 MB vs 726 MB) and `tests/test_unit.sql` Check 4.5 (MAP ↔ `json_extract_string` parity).
 
 ---
 

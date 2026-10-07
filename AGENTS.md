@@ -47,6 +47,7 @@ osm-pois/
 │       └── 06_places_transform.sql         # places_export transform view (Single Source of Truth)
 └── tests/
     ├── test_conversion.sh                  # Local integration test runner
+    ├── test_memory_budget.sh               # Peak-RSS budget guard for single-pass properties parsing
     └── fixtures/                           # Test PBF fixtures (e.g. Monaco)
 ```
 
@@ -118,6 +119,10 @@ When modifying or generating code in this repository, you **MUST** follow these 
 14. **Mapping & Taxonomy Deduplication Invariant**:
     * Both `mappings/overture_to_osm_categories.csv` and `mappings/overture_categories.csv` must remain strictly free of duplicate lines and redundant category definitions.
     * Every run of `./tests/run_unit_tests.sh` executes automated integrity assertions (`duplicate_mapping_check` and `duplicate_taxonomy_check`) that immediately fail if duplicates are introduced.
+15. **Single-Pass Properties Parsing (Taiwan OOM Invariant)**:
+    * The GeoJSON `properties` column is always read as `MAP(VARCHAR, VARCHAR)`, never as `JSON`, and the declaration must be identical in the FIFO view of `scripts/export_pois.sql` and in both `read_json` calls of `scripts/entrypoint.py` (the transform view is bound once against `osm_json_src`, so bootstrap and per-chunk schemas must match).
+    * Every tag access must be a map lookup (`props['amenity']`, `map_keys(props)`, `map_entries(props)`). Calling `json_extract_*` / `json_keys` on `properties` is strictly forbidden: each call re-parses the whole JSON document, which makes per-row cost quadratic in tag count and reproduced the Taiwan OOM (`failed to allocate data of size 16.0 MiB (4.4 GiB/4.4 GiB used)` before `[CHUNK 1]` was ever logged).
+    * Lookup semantics must remain identical to `json_extract_string` (missing key → `NULL`, JSON numbers/booleans → `VARCHAR`, JSON `null` → `NULL`, nested object → its JSON text; keys may contain `:`, `"` and CJK). Pinned by `tests/test_unit.sql` (Check 4.5 parity assertions) and by the peak-RSS budget assertion in `tests/test_memory_budget.sh`, which fails loudly on the legacy JSON reader.
 
 ---
 
@@ -189,7 +194,8 @@ This will:
 1. Ensure the Monaco sample PBF fixture exists (or downloads it if missing).
 2. Run `scripts/entrypoint.sh` (which delegates streaming to the chunked Python driver `scripts/entrypoint.py` using DuckDB).
 3. Run `tests/test_chunked_streaming.sh`: force 10+ tiny ingest chunks and assert the result is bit-identical (md5) to a single-chunk run, with the KV_METADATA provenance block intact.
-4. Assert row count, schema validity, category assignment, and address coverage.
+4. Run `tests/test_memory_budget.sh`: stream a synthetic tag-rich 100 MB chunk through the production driver under an RSS wrapper and assert peak RSS stays within the 1.5 GB budget (fails on the legacy `JSON` reader).
+5. Assert row count, schema validity, category assignment, and address coverage.
 
 ### Ad-hoc Validation with DuckDB
 

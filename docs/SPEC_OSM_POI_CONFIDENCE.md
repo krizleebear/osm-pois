@@ -143,9 +143,9 @@ After applying the formula, the confidence distribution across a nationwide data
    (?i)\b(geschlossen|closed|demolished|abgerissen|weg|nicht mehr|does not exist|dauerhaft geschlossen|permanently closed)\b
    ```
 4. **Dynamic Payment Methods Extraction:**
-   * Evaluated dynamically from `json_keys(properties)`:
+   * Evaluated dynamically from `map_keys(props)` (single-pass MAP lookup, never `json_extract_*`):
      ```sql
-     list_sort([substring(k, 9) for k in json_keys(props) if k LIKE 'payment:%' AND json_extract_string(props, '$."' || k || '"') IN ('yes', 'only')])
+     list_sort([substring(k, 9) for k in map_keys(props) if k LIKE 'payment:%' AND props[k] IN ('yes', 'only')])
      ```
 5. **Performance Invariant:**
    * All tag extractions execute vectorized in DuckDB memory without subqueries, external network lookups, or intermediate disk writes.
