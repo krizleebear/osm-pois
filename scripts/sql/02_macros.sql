@@ -259,7 +259,9 @@ COALESCE(
     AND json_extract_string(props, '$.name') != ''
     AND list_contains(['office', 'school', 'kindergarten', 'college', 'university', 'hospital', 'civic', 'government', 'fire_station', 'train_station', 'transportation', 'hotel', 'sports_hall', 'stadium', 'retail', 'commercial', 'industrial', 'warehouse'], json_extract_string(props, '$.building'))
     AND (
-        json_extract_string(props, '$.addr:street') IS NOT NULL
+        -- For educational and other public/communal buildings, name is sufficient verification
+        json_extract_string(props, '$.building') IN ('school', 'kindergarten', 'college', 'university', 'hospital', 'civic', 'government', 'fire_station', 'train_station', 'transportation')
+        OR json_extract_string(props, '$.addr:street') IS NOT NULL
         OR json_extract_string(props, '$.addr:postcode') IS NOT NULL
         OR json_extract_string(props, '$.addr:city') IS NOT NULL
         OR json_extract_string(props, '$.website') IS NOT NULL
