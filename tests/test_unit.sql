@@ -519,7 +519,9 @@ SELECT 304 AS id, '{"@type":"way","building":"residential","name":"Wohnhaus Nord
 UNION ALL
 SELECT 305 AS id, '{"@type":"way","building":"office","name":"Anonymous Office"}'::JSON AS props, TRUE AS is_area
 UNION ALL
-SELECT 306 AS id, '{"@type":"node","building":"school","name":"Point School","website":"https://example.test"}'::JSON AS props, FALSE AS is_area;
+SELECT 306 AS id, '{"@type":"node","building":"school","name":"Point School","website":"https://example.test"}'::JSON AS props, FALSE AS is_area
+UNION ALL
+SELECT 307 AS id, '{"@type":"way","building":"school","name":"Apian-Gymnasium Ingolstadt"}'::JSON AS props, TRUE AS is_area; -- Public school without verification fields (must be admitted)
 
 CREATE TEMP TABLE mock_functional_building_evaluated AS
 SELECT
@@ -530,8 +532,8 @@ FROM mock_functional_building_input;
 
 SELECT
     CASE
-        WHEN (SELECT list_sort(list(id)) FROM mock_functional_building_evaluated WHERE is_candidate) = [301, 302, 303]
-         AND (SELECT list_sort(list(id)) FROM mock_functional_building_evaluated WHERE is_functional_building) = [301, 302, 303]
+        WHEN (SELECT list_sort(list(id)) FROM mock_functional_building_evaluated WHERE is_candidate) = [301, 302, 303, 307]
+         AND (SELECT list_sort(list(id)) FROM mock_functional_building_evaluated WHERE is_functional_building) = [301, 302, 303, 307]
         THEN '[OK] Functional building fallback passed: verified office, school, and warehouse areas admitted; residential, unverified, and point features excluded'
         ELSE error('FUNCTIONAL BUILDING FILTER FAILED: unexpected building POI retention!')
     END AS functional_building_check
