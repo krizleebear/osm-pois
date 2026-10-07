@@ -1,5 +1,5 @@
 # Unified Dev Container for osm-pois
-# Environment: Ubuntu 26.04, DuckDB CLI + Spatial, Osmium Tool, Git, Opencode, Antigravity CLI (agy)
+# Environment: Ubuntu 26.04, DuckDB CLI + Python API + Spatial, Osmium Tool, Git, Opencode, Antigravity CLI (agy)
 # Timezone: Europe/Berlin
 # User: ubuntu (UID 1000)
 FROM ubuntu:26.04
@@ -23,6 +23,10 @@ RUN apt-get update && \
       unzip \
       tzdata \
       osmium-tool \
+      python3 \
+      python3-pip \
+      python3-venv \
+      python3-dev \
       xclip \
       xsel \
       wl-clipboard && \
@@ -42,7 +46,18 @@ RUN set -eux; \
     unzip -q /tmp/duckdb.zip -d /usr/local/bin && \
     chmod 755 /usr/local/bin/duckdb && \
     rm /tmp/duckdb.zip && \
-    duckdb -c "INSTALL spatial; LOAD spatial;" && \
+    duckdb -c "INSTALL spatial; LOAD spatial;"
+
+# 2b. Install DuckDB Python package (version-matched to CLI v1.5.5) + fsspec
+# Ubuntu 26.04 enforces PEP 668 (externally-managed environment), so system-level
+# pip installs require --break-system-packages. Extensions land in /root/.duckdb
+# and are propagated to the ubuntu user by the copy in section 5.
+# fsspec is required by duckdb.read_json(io.BytesIO(...)) in scripts/entrypoint.py
+# (the chunked Python streaming driver); stdlib-only runs fail without it.
+RUN python3 -m pip install --no-cache-dir --break-system-packages \
+      duckdb==1.5.5 \
+      fsspec && \
+    python3 -c "import duckdb; duckdb.sql('INSTALL spatial; LOAD spatial;')" && \
     cp -r /root/.duckdb /tmp/.duckdb-ext-cache
 
 # 3. Install AI Agent CLIs (opencode & agy)
