@@ -340,5 +340,10 @@ fi
 # bit-identical to a single-chunk run and preserve KV_METADATA provenance.
 "$SCRIPT_DIR/test_chunked_streaming.sh"
 
+# Verify the single-pass properties parsing memory budget (Taiwan OOM): a tag-rich
+# chunk must stream through the driver inside the RSS budget (fails on the legacy
+# JSON reader, which re-parses the document per tag access).
+"$SCRIPT_DIR/test_memory_budget.sh"
+
 echo "=== [OK] Integration Test Passed ($TOTAL_COUNT POIs generated, $WAY_COUNT ways, $WITH_ADDR with addresses, $COMMON_NAMES_COUNT multilingual names, $WITH_NAMES_RULES with names.rules, $WITH_ALT_CATS with alt categories, $WITH_SOCIALS with socials, $WITH_TAGS_COUNT with raw tags, $POST_BOX_COUNT post boxes, rules STRUCT[] & common/tags MAP schema types verified, Parquet KV metadata verified) ==="
 rm -f "$OUTPUT_PARQUET"

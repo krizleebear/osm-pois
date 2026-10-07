@@ -20,6 +20,12 @@ LOAD spatial;
 .read scripts/sql/04_confidence.sql
 .read scripts/sql/05_relations.sql
 
+-- Single-pass properties parsing (MAP fixtures): production reads GeoJSON `properties`
+-- as MAP(VARCHAR, VARCHAR), never as JSON (see docs/duckdb_gotchas.md). Every test
+-- fixture must therefore be built through tags_of() so macro signatures under test
+-- match the production column type exactly.
+CREATE OR REPLACE MACRO tags_of(json_text) AS (json_text::JSON::MAP(VARCHAR, VARCHAR));
+
 -- ----------------------------------------------------------------------------
 -- Part 1: Taxonomy & Mapping Integrity Checks
 -- ----------------------------------------------------------------------------
@@ -342,7 +348,7 @@ WHERE expected_category != actual_category;
 -- Check 3.1: Multilingual extraction & namespace filtering logic via osm_names_common macro
 CREATE TEMP TABLE mock_names_input AS
 SELECT 
-    '{"@type":"node","@id":123,"name":"Hauptbahnhof","name:en":"Main Station","name:de":"Hauptbahnhof","name:fr":"Gare Centrale","alt_name":"Hbf","int_name":"Central Station","name:etymology:wikidata":"Q123","name:signed":"no","name:empty":""}'::JSON AS properties;
+    tags_of('{"@type":"node","@id":123,"name":"Hauptbahnhof","name:en":"Main Station","name:de":"Hauptbahnhof","name:fr":"Gare Centrale","alt_name":"Hbf","int_name":"Central Station","name:etymology:wikidata":"Q123","name:signed":"no","name:empty":""}') AS properties;
 
 CREATE TEMP TABLE mock_names_result AS
 SELECT osm_names_common(properties) AS names_common
@@ -366,59 +372,59 @@ FROM mock_names_result;
 
 -- Check 3.2: Micro-infrastructure filtering logic via is_poi_candidate macro
 CREATE TEMP TABLE mock_micro_input AS
-SELECT 1 AS id, '{"amenity":"bench","operator":"City"}'::JSON AS properties
+SELECT 1 AS id, tags_of('{"amenity":"bench","operator":"City"}') AS properties
 UNION ALL
-SELECT 2 AS id, '{"amenity":"waste_basket","operator":"BSR"}'::JSON AS properties
+SELECT 2 AS id, tags_of('{"amenity":"waste_basket","operator":"BSR"}') AS properties
 UNION ALL
-SELECT 3 AS id, '{"amenity":"shelter","operator":"DB"}'::JSON AS properties
+SELECT 3 AS id, tags_of('{"amenity":"shelter","operator":"DB"}') AS properties
 UNION ALL
-SELECT 4 AS id, '{"amenity":"post_box","operator":"La Poste"}'::JSON AS properties
+SELECT 4 AS id, tags_of('{"amenity":"post_box","operator":"La Poste"}') AS properties
 UNION ALL
-SELECT 5 AS id, '{"amenity":"bench","shop":"bakery","name":"Boulangerie"}'::JSON AS properties
+SELECT 5 AS id, tags_of('{"amenity":"bench","shop":"bakery","name":"Boulangerie"}') AS properties
 UNION ALL
-SELECT 6 AS id, '{"tourism":"information","information":"board","name":"Wanderweg Tafel"}'::JSON AS properties
+SELECT 6 AS id, tags_of('{"tourism":"information","information":"board","name":"Wanderweg Tafel"}') AS properties
 UNION ALL
-SELECT 7 AS id, '{"tourism":"information","information":"guidepost","operator":"Schwarzwaldverein"}'::JSON AS properties
+SELECT 7 AS id, tags_of('{"tourism":"information","information":"guidepost","operator":"Schwarzwaldverein"}') AS properties
 UNION ALL
-SELECT 8 AS id, '{"tourism":"information","information":"map","name":"Stadtplan"}'::JSON AS properties
+SELECT 8 AS id, tags_of('{"tourism":"information","information":"map","name":"Stadtplan"}') AS properties
 UNION ALL
-SELECT 9 AS id, '{"tourism":"information","information":"office","name":"Tourist Information"}'::JSON AS properties
+SELECT 9 AS id, tags_of('{"tourism":"information","information":"office","name":"Tourist Information"}') AS properties
 UNION ALL
-SELECT 10 AS id, '{"tourism":"information","name":"Office du Tourisme"}'::JSON AS properties
+SELECT 10 AS id, tags_of('{"tourism":"information","name":"Office du Tourisme"}') AS properties
 UNION ALL
-SELECT 11 AS id, '{"amenity":"post_box"}'::JSON AS properties
+SELECT 11 AS id, tags_of('{"amenity":"post_box"}') AS properties
 UNION ALL
-SELECT 12 AS id, '{"leisure":"playground","access":"yes"}'::JSON AS properties
+SELECT 12 AS id, tags_of('{"leisure":"playground","access":"yes"}') AS properties
 UNION ALL
-SELECT 13 AS id, '{"amenity":"toilets","wheelchair":"yes"}'::JSON AS properties
+SELECT 13 AS id, tags_of('{"amenity":"toilets","wheelchair":"yes"}') AS properties
 UNION ALL
-SELECT 14 AS id, '{"amenity":"charging_station","capacity":"4"}'::JSON AS properties
+SELECT 14 AS id, tags_of('{"amenity":"charging_station","capacity":"4"}') AS properties
 UNION ALL
-SELECT 15 AS id, '{"amenity":"parking","parking":"surface"}'::JSON AS properties
+SELECT 15 AS id, tags_of('{"amenity":"parking","parking":"surface"}') AS properties
 UNION ALL
-SELECT 16 AS id, '{"emergency":"defibrillator"}'::JSON AS properties
+SELECT 16 AS id, tags_of('{"emergency":"defibrillator"}') AS properties
 UNION ALL
-SELECT 17 AS id, '{"amenity":"parcel_locker","brand":"DHL","ref":"102"}'::JSON AS properties
+SELECT 17 AS id, tags_of('{"amenity":"parcel_locker","brand":"DHL","ref":"102"}') AS properties
 UNION ALL
-SELECT 18 AS id, '{"amenity":"parcel_locker","ref":"102"}'::JSON AS properties
+SELECT 18 AS id, tags_of('{"amenity":"parcel_locker","ref":"102"}') AS properties
 UNION ALL
-SELECT 19 AS id, '{"man_made":"tower","name":"Fernsehturm"}'::JSON AS properties
+SELECT 19 AS id, tags_of('{"man_made":"tower","name":"Fernsehturm"}') AS properties
 UNION ALL
-SELECT 20 AS id, '{"man_made":"flagpole"}'::JSON AS properties
+SELECT 20 AS id, tags_of('{"man_made":"flagpole"}') AS properties
 UNION ALL
-SELECT 21 AS id, '{"man_made":"surveillance","name":"Cam 1"}'::JSON AS properties
+SELECT 21 AS id, tags_of('{"man_made":"surveillance","name":"Cam 1"}') AS properties
 UNION ALL
-SELECT 22 AS id, '{"man_made":"water_tower","name":"Wasserturm"}'::JSON AS properties
+SELECT 22 AS id, tags_of('{"man_made":"water_tower","name":"Wasserturm"}') AS properties
 UNION ALL
-SELECT 23 AS id, '{"amenity":"drinking_water"}'::JSON AS properties
+SELECT 23 AS id, tags_of('{"amenity":"drinking_water"}') AS properties
 UNION ALL
-SELECT 24 AS id, '{"amenity":"atm"}'::JSON AS properties
+SELECT 24 AS id, tags_of('{"amenity":"atm"}') AS properties
 UNION ALL
-SELECT 25 AS id, '{"amenity":"taxi"}'::JSON AS properties
+SELECT 25 AS id, tags_of('{"amenity":"taxi"}') AS properties
 UNION ALL
-SELECT 26 AS id, '{"highway":"rest_area"}'::JSON AS properties
+SELECT 26 AS id, tags_of('{"highway":"rest_area"}') AS properties
 UNION ALL
-SELECT 27 AS id, '{"highway":"services","name":"Rasthof Holmmoor"}'::JSON AS properties;
+SELECT 27 AS id, tags_of('{"highway":"services","name":"Rasthof Holmmoor"}') AS properties;
 
 CREATE TEMP TABLE mock_micro_filtered AS
 SELECT id, resolve_poi_name(properties) AS name
@@ -437,19 +443,19 @@ FROM mock_micro_filtered;
 
 -- Check 3.2b: Temporary closed landmark filtering and lifecycle state (Issue #1)
 CREATE TEMP TABLE mock_lifecycle_input AS
-SELECT 101 AS id, '{"@type":"way","disused:amenity":"theatre","name":"Theater Augsburg","wikidata":"Q15850550","building":"yes"}'::JSON AS props, TRUE AS is_area -- Theater Augsburg under renovation
+SELECT 101 AS id, tags_of('{"@type":"way","disused:amenity":"theatre","name":"Theater Augsburg","wikidata":"Q15850550","building":"yes"}') AS props, TRUE AS is_area -- Theater Augsburg under renovation
 UNION ALL
-SELECT 102 AS id, '{"@type":"relation","construction:amenity":"hospital","name":"Neues Klinikum","operator":"Städtisches Klinikum","building":"yes"}'::JSON AS props, TRUE AS is_area -- Hospital under construction
+SELECT 102 AS id, tags_of('{"@type":"relation","construction:amenity":"hospital","name":"Neues Klinikum","operator":"Städtisches Klinikum","building":"yes"}') AS props, TRUE AS is_area -- Hospital under construction
 UNION ALL
-SELECT 103 AS id, '{"@type":"way","amenity":"museum","name":"Stadtmuseum","temporary:closure":"renovation","addr:street":"Museumsweg","building":"yes"}'::JSON AS props, TRUE AS is_area -- Museum temporarily closed
+SELECT 103 AS id, tags_of('{"@type":"way","amenity":"museum","name":"Stadtmuseum","temporary:closure":"renovation","addr:street":"Museumsweg","building":"yes"}') AS props, TRUE AS is_area -- Museum temporarily closed
 UNION ALL
-SELECT 104 AS id, '{"@type":"node","disused:shop":"bakery","name":"Alte Bäckerei"}'::JSON AS props, FALSE AS is_area -- Disused shop (must be excluded)
+SELECT 104 AS id, tags_of('{"@type":"node","disused:shop":"bakery","name":"Alte Bäckerei"}') AS props, FALSE AS is_area -- Disused shop (must be excluded)
 UNION ALL
-SELECT 105 AS id, '{"@type":"way","disused:amenity":"theatre","name":"Altes Theater","demolished:building":"yes"}'::JSON AS props, TRUE AS is_area -- Demolished (must be excluded)
+SELECT 105 AS id, tags_of('{"@type":"way","disused:amenity":"theatre","name":"Altes Theater","demolished:building":"yes"}') AS props, TRUE AS is_area -- Demolished (must be excluded)
 UNION ALL
-SELECT 106 AS id, '{"@type":"way","disused:amenity":"theatre","name":"Ruine Theater","ruins":"yes"}'::JSON AS props, TRUE AS is_area -- Ruins (must be excluded)
+SELECT 106 AS id, tags_of('{"@type":"way","disused:amenity":"theatre","name":"Ruine Theater","ruins":"yes"}') AS props, TRUE AS is_area -- Ruins (must be excluded)
 UNION ALL
-SELECT 107 AS id, '{"@type":"node","disused:amenity":"bench","name":"Alte Bank"}'::JSON AS props, FALSE AS is_area; -- Micro-infra (must be excluded)
+SELECT 107 AS id, tags_of('{"@type":"node","disused:amenity":"bench","name":"Alte Bank"}') AS props, FALSE AS is_area; -- Micro-infra (must be excluded)
 
 CREATE TEMP TABLE mock_lifecycle_evaluated AS
 SELECT 
@@ -474,21 +480,21 @@ LIMIT 1;
 
 -- Check 3.2c: Named search-relevant area classification & exclusions (Issue #2)
 CREATE TEMP TABLE mock_area_poi_input AS
-SELECT 201 AS id, '{"@type":"way","name":"Englischer Garten","leisure":"park"}'::JSON AS props, TRUE AS is_area -- Named park area
+SELECT 201 AS id, tags_of('{"@type":"way","name":"Englischer Garten","leisure":"park"}') AS props, TRUE AS is_area -- Named park area
 UNION ALL
-SELECT 202 AS id, '{"@type":"way","name":"Nordfriedhof","landuse":"cemetery"}'::JSON AS props, TRUE AS is_area -- Named cemetery area
+SELECT 202 AS id, tags_of('{"@type":"way","name":"Nordfriedhof","landuse":"cemetery"}') AS props, TRUE AS is_area -- Named cemetery area
 UNION ALL
-SELECT 203 AS id, '{"@type":"relation","name":"Campus Garching","amenity":"university"}'::JSON AS props, TRUE AS is_area -- Named university campus
+SELECT 203 AS id, tags_of('{"@type":"relation","name":"Campus Garching","amenity":"university"}') AS props, TRUE AS is_area -- Named university campus
 UNION ALL
-SELECT 204 AS id, '{"@type":"way","name":"Kleingartenverein Frohsinn","landuse":"allotments"}'::JSON AS props, TRUE AS is_area -- Named allotments
+SELECT 204 AS id, tags_of('{"@type":"way","name":"Kleingartenverein Frohsinn","landuse":"allotments"}') AS props, TRUE AS is_area -- Named allotments
 UNION ALL
-SELECT 205 AS id, '{"@type":"way","name":"Wohngebiet Nord","landuse":"residential"}'::JSON AS props, TRUE AS is_area -- Technical residential (must be excluded)
+SELECT 205 AS id, tags_of('{"@type":"way","name":"Wohngebiet Nord","landuse":"residential"}') AS props, TRUE AS is_area -- Technical residential (must be excluded)
 UNION ALL
-SELECT 206 AS id, '{"@type":"way","name":"Gewerbegebiet Süd","landuse":"industrial"}'::JSON AS props, TRUE AS is_area -- Technical industrial (must be excluded)
+SELECT 206 AS id, tags_of('{"@type":"way","name":"Gewerbegebiet Süd","landuse":"industrial"}') AS props, TRUE AS is_area -- Technical industrial (must be excluded)
 UNION ALL
-SELECT 207 AS id, '{"@type":"way","landuse":"cemetery"}'::JSON AS props, TRUE AS is_area -- Unnamed cemetery area (must be excluded from area extraction)
+SELECT 207 AS id, tags_of('{"@type":"way","landuse":"cemetery"}') AS props, TRUE AS is_area -- Unnamed cemetery area (must be excluded from area extraction)
 UNION ALL
-SELECT 208 AS id, '{"@type":"way","name":"Acker 12","landuse":"farmland"}'::JSON AS props, TRUE AS is_area; -- Technical farmland (must be excluded)
+SELECT 208 AS id, tags_of('{"@type":"way","name":"Acker 12","landuse":"farmland"}') AS props, TRUE AS is_area; -- Technical farmland (must be excluded)
 
 CREATE TEMP TABLE mock_area_poi_evaluated AS
 SELECT 
@@ -509,19 +515,19 @@ LIMIT 1;
 
 -- Check 3.2d: Named functional building fallback (Issue #3)
 CREATE TEMP TABLE mock_functional_building_input AS
-SELECT 301 AS id, '{"@type":"way","building":"office","name":"e.solutions","addr:street":"Frauenweiherstraße","addr:housenumber":"17","addr:city":"Erlangen","website":"https://www.esolutions.de"}'::JSON AS props, TRUE AS is_area
+SELECT 301 AS id, tags_of('{"@type":"way","building":"office","name":"e.solutions","addr:street":"Frauenweiherstraße","addr:housenumber":"17","addr:city":"Erlangen","website":"https://www.esolutions.de"}') AS props, TRUE AS is_area
 UNION ALL
-SELECT 302 AS id, '{"@type":"way","building":"school","name":"Apian-Gymnasium Ingolstadt","addr:street":"Maximilianstraße","addr:housenumber":"25","addr:city":"Ingolstadt","contact:website":"http://www.apian.de"}'::JSON AS props, TRUE AS is_area
+SELECT 302 AS id, tags_of('{"@type":"way","building":"school","name":"Apian-Gymnasium Ingolstadt","addr:street":"Maximilianstraße","addr:housenumber":"25","addr:city":"Ingolstadt","contact:website":"http://www.apian.de"}') AS props, TRUE AS is_area
 UNION ALL
-SELECT 303 AS id, '{"@type":"way","building":"warehouse","name":"Logistics Hub","website":"https://example.test"}'::JSON AS props, TRUE AS is_area
+SELECT 303 AS id, tags_of('{"@type":"way","building":"warehouse","name":"Logistics Hub","website":"https://example.test"}') AS props, TRUE AS is_area
 UNION ALL
-SELECT 304 AS id, '{"@type":"way","building":"residential","name":"Wohnhaus Nord","addr:street":"Hauptstraße"}'::JSON AS props, TRUE AS is_area
+SELECT 304 AS id, tags_of('{"@type":"way","building":"residential","name":"Wohnhaus Nord","addr:street":"Hauptstraße"}') AS props, TRUE AS is_area
 UNION ALL
-SELECT 305 AS id, '{"@type":"way","building":"office","name":"Anonymous Office"}'::JSON AS props, TRUE AS is_area
+SELECT 305 AS id, tags_of('{"@type":"way","building":"office","name":"Anonymous Office"}') AS props, TRUE AS is_area
 UNION ALL
-SELECT 306 AS id, '{"@type":"node","building":"school","name":"Point School","website":"https://example.test"}'::JSON AS props, FALSE AS is_area
+SELECT 306 AS id, tags_of('{"@type":"node","building":"school","name":"Point School","website":"https://example.test"}') AS props, FALSE AS is_area
 UNION ALL
-SELECT 307 AS id, '{"@type":"way","building":"school","name":"Apian-Gymnasium Ingolstadt"}'::JSON AS props, TRUE AS is_area; -- Public school without verification fields (must be admitted)
+SELECT 307 AS id, tags_of('{"@type":"way","building":"school","name":"Apian-Gymnasium Ingolstadt"}') AS props, TRUE AS is_area; -- Public school without verification fields (must be admitted)
 
 CREATE TEMP TABLE mock_functional_building_evaluated AS
 SELECT
@@ -599,8 +605,8 @@ FROM schema_type_check;
 -- Check 3.4: Alternative names rules extraction (osm_names_rules)
 CREATE TEMP TABLE mock_rules_test AS
 SELECT 
-    osm_names_rules('{"name":"Hauptbahnhof","alt_name":"Hbf","official_name":"Zentralbahnhof","short_name:de":"Hb","loc_name":"Bahnhof","reg_name":"Grossbahnhof","int_name":"Central Station","nickname":"Stachus","nickname:en":"The Gherkin"}'::JSON) AS rules_populated,
-    osm_names_rules('{"name":"Bäckerei"}'::JSON) AS rules_empty;
+    osm_names_rules(tags_of('{"name":"Hauptbahnhof","alt_name":"Hbf","official_name":"Zentralbahnhof","short_name:de":"Hb","loc_name":"Bahnhof","reg_name":"Grossbahnhof","int_name":"Central Station","nickname":"Stachus","nickname:en":"The Gherkin"}')) AS rules_populated,
+    osm_names_rules(tags_of('{"name":"Bäckerei"}')) AS rules_empty;
 
 SELECT 
     CASE 
@@ -624,8 +630,8 @@ FROM mock_rules_test;
 -- Check 3.5: Socials extraction (extract_socials)
 CREATE TEMP TABLE mock_socials_test AS
 SELECT 
-    extract_socials('{"name":"Shop","contact:facebook":"myshopfb","instagram":"https://instagram.com/myshop","contact:twitter":"@myshoptw","contact:linkedin":"company/myshop"}'::JSON) AS socials_populated,
-    extract_socials('{"name":"Shop"}'::JSON) AS socials_empty;
+    extract_socials(tags_of('{"name":"Shop","contact:facebook":"myshopfb","instagram":"https://instagram.com/myshop","contact:twitter":"@myshoptw","contact:linkedin":"company/myshop"}')) AS socials_populated,
+    extract_socials(tags_of('{"name":"Shop"}')) AS socials_empty;
 
 SELECT 
     CASE 
@@ -711,7 +717,7 @@ FROM mock_area_test;
 
 -- Check 4.1: Dynamic Payment Methods Extraction & Sorting
 CREATE TEMP TABLE mock_payment_test AS
-SELECT extract_payment_methods('{"payment:cash":"yes","payment:credit_cards":"yes","payment:apple_pay":"only","payment:bitcoin":"no","payment:notes":"yes"}'::JSON) AS payment_methods;
+SELECT extract_payment_methods(tags_of('{"payment:cash":"yes","payment:credit_cards":"yes","payment:apple_pay":"only","payment:bitcoin":"no","payment:notes":"yes"}')) AS payment_methods;
 
 SELECT 
     CASE 
@@ -725,7 +731,7 @@ FROM mock_payment_test;
 CREATE TEMP TABLE confidence_test_cases (
     test_id VARCHAR,
     expected_score DECIMAL(11,2),
-    props JSON,
+    props MAP(VARCHAR, VARCHAR),
     is_polygon BOOLEAN,
     osm_version INTEGER,
     osm_timestamp VARCHAR,
@@ -736,46 +742,46 @@ CREATE TEMP TABLE confidence_test_cases (
 
 INSERT INTO confidence_test_cases VALUES
     -- Base Minimal node: 0.60 - 0.08 (minimal penalty) = 0.52
-    ('CONF-01-Minimal', 0.52, '{"name":"Minimal POI","amenity":"restaurant"}'::JSON, false, 1, '2026-01-01T00:00:00Z', false, false, 2026),
+    ('CONF-01-Minimal', 0.52, tags_of('{"name":"Minimal POI","amenity":"restaurant"}'), false, 1, '2026-01-01T00:00:00Z', false, false, 2026),
     
     -- Standard Venue with Website (contact bonus +0.08): 0.60 + 0.08 = 0.68
-    ('CONF-02-WithContact', 0.68, '{"name":"Standard Venue","amenity":"restaurant","website":"https://example.com"}'::JSON, false, 1, '2026-01-01T00:00:00Z', true, false, 2026),
+    ('CONF-02-WithContact', 0.68, tags_of('{"name":"Standard Venue","amenity":"restaurant","website":"https://example.com"}'), false, 1, '2026-01-01T00:00:00Z', true, false, 2026),
     
     -- Fresh Survey (+0.15 survey + 0.08 contact): 0.60 + 0.15 + 0.08 = 0.83
-    ('CONF-03-FreshSurvey', 0.83, '{"name":"Surveyed Place","amenity":"restaurant","check_date":"2025-06-15"}'::JSON, false, 1, '2026-01-01T00:00:00Z', true, false, 2026),
+    ('CONF-03-FreshSurvey', 0.83, tags_of('{"name":"Surveyed Place","amenity":"restaurant","check_date":"2025-06-15"}'), false, 1, '2026-01-01T00:00:00Z', true, false, 2026),
     
     -- Older Survey (+0.08 older survey + 0.08 contact): 0.60 + 0.08 + 0.08 = 0.76
-    ('CONF-04-OlderSurvey', 0.76, '{"name":"Older Survey Place","amenity":"restaurant","survey:date":"2022-03-10"}'::JSON, false, 1, '2026-01-01T00:00:00Z', true, false, 2026),
+    ('CONF-04-OlderSurvey', 0.76, tags_of('{"name":"Older Survey Place","amenity":"restaurant","survey:date":"2022-03-10"}'), false, 1, '2026-01-01T00:00:00Z', true, false, 2026),
     
     -- Opening Hours (+0.10 hours + 0.08 contact): 0.60 + 0.10 + 0.08 = 0.78
-    ('CONF-05-OpeningHours', 0.78, '{"name":"Cafe","amenity":"cafe","opening_hours":"Mo-Fr 08:00-18:00"}'::JSON, false, 1, '2026-01-01T00:00:00Z', true, false, 2026),
+    ('CONF-05-OpeningHours', 0.78, tags_of('{"name":"Cafe","amenity":"cafe","opening_hours":"Mo-Fr 08:00-18:00"}'), false, 1, '2026-01-01T00:00:00Z', true, false, 2026),
     
     -- Entity Wikidata (+0.06 wiki + 0.08 contact): 0.60 + 0.06 + 0.08 = 0.74
-    ('CONF-06-Wikidata', 0.74, '{"name":"Museum","tourism":"museum","wikidata":"Q12345"}'::JSON, false, 1, '2026-01-01T00:00:00Z', true, false, 2026),
+    ('CONF-06-Wikidata', 0.74, tags_of('{"name":"Museum","tourism":"museum","wikidata":"Q12345"}'), false, 1, '2026-01-01T00:00:00Z', true, false, 2026),
     
     -- Tag Richness (+0.05 richness + 0.08 contact): 0.60 + 0.05 + 0.08 = 0.73
-    ('CONF-07-TagRichness', 0.73, '{"name":"Bistro","amenity":"restaurant","wheelchair":"yes","cuisine":"french"}'::JSON, false, 1, '2026-01-01T00:00:00Z', true, false, 2026),
+    ('CONF-07-TagRichness', 0.73, tags_of('{"name":"Bistro","amenity":"restaurant","wheelchair":"yes","cuisine":"french"}'), false, 1, '2026-01-01T00:00:00Z', true, false, 2026),
     
     -- Building Anchor (+0.05 building + 0.08 contact): 0.60 + 0.05 + 0.08 = 0.73
-    ('CONF-08-BuildingAnchor', 0.73, '{"name":"Store","shop":"supermarket"}'::JSON, true, 1, '2026-01-01T00:00:00Z', true, false, 2026),
+    ('CONF-08-BuildingAnchor', 0.73, tags_of('{"name":"Store","shop":"supermarket"}'), true, 1, '2026-01-01T00:00:00Z', true, false, 2026),
     
     -- Mature Revision (+0.03 version + 0.08 contact): 0.60 + 0.03 + 0.08 = 0.71
-    ('CONF-09-MatureRevision', 0.71, '{"name":"Shop","shop":"clothes"}'::JSON, false, 4, '2026-01-01T00:00:00Z', true, false, 2026),
+    ('CONF-09-MatureRevision', 0.71, tags_of('{"name":"Shop","shop":"clothes"}'), false, 4, '2026-01-01T00:00:00Z', true, false, 2026),
     
     -- Top-Tier Venue (all bonuses sum to 0.52, capped at +0.39): 0.60 + 0.39 = 0.99
-    ('CONF-10-TopTierMax', 0.99, '{"name":"Grand Hotel","tourism":"hotel","check_date":"2025-05-01","opening_hours":"24/7","wikidata":"Q999","wheelchair":"yes","cuisine":"fine_dining","building":"hotel"}'::JSON, true, 5, '2025-05-01T12:00:00Z', true, true, 2026),
+    ('CONF-10-TopTierMax', 0.99, tags_of('{"name":"Grand Hotel","tourism":"hotel","check_date":"2025-05-01","opening_hours":"24/7","wikidata":"Q999","wheelchair":"yes","cuisine":"fine_dining","building":"hotel"}'), true, 5, '2025-05-01T12:00:00Z', true, true, 2026),
     
     -- Closure Note (-0.35 note - 0.08 minimal): 0.60 - 0.35 - 0.08 = 0.17
-    ('CONF-11-ClosureNote', 0.17, '{"name":"Old Bar","amenity":"bar","note":"dauerhaft geschlossen"}'::JSON, false, 1, '2026-01-01T00:00:00Z', false, false, 2026),
+    ('CONF-11-ClosureNote', 0.17, tags_of('{"name":"Old Bar","amenity":"bar","note":"dauerhaft geschlossen"}'), false, 1, '2026-01-01T00:00:00Z', false, false, 2026),
     
     -- Lifecycle Disused (-0.40 disused - 0.08 minimal): 0.60 - 0.40 - 0.08 = 0.12
-    ('CONF-12-LifecycleDisused', 0.12, '{"name":"Disused Bank","amenity":"bank","disused":"yes"}'::JSON, false, 1, '2026-01-01T00:00:00Z', false, false, 2026),
+    ('CONF-12-LifecycleDisused', 0.12, tags_of('{"name":"Disused Bank","amenity":"bank","disused":"yes"}'), false, 1, '2026-01-01T00:00:00Z', false, false, 2026),
     
     -- Stale Record (> 8 years without contacts: -0.15 stale - 0.08 minimal): 0.60 - 0.15 - 0.08 = 0.37
-    ('CONF-13-StaleRecord', 0.37, '{"name":"Stale Shop","shop":"books"}'::JSON, false, 1, '2015-05-01T00:00:00Z', false, false, 2026),
+    ('CONF-13-StaleRecord', 0.37, tags_of('{"name":"Stale Shop","shop":"books"}'), false, 1, '2015-05-01T00:00:00Z', false, false, 2026),
     
     -- Clamped Minimum (0.60 - 0.35 - 0.40 = -0.15 -> clamp to 0.10)
-    ('CONF-14-ClampedMin', 0.10, '{"name":"Demolished Pub","amenity":"pub","disused:amenity":"pub","note":"abgerissen"}'::JSON, false, 1, '2026-01-01T00:00:00Z', false, false, 2026);
+    ('CONF-14-ClampedMin', 0.10, tags_of('{"name":"Demolished Pub","amenity":"pub","disused:amenity":"pub","note":"abgerissen"}'), false, 1, '2026-01-01T00:00:00Z', false, false, 2026);
 
 CREATE TEMP TABLE evaluated_confidence AS
 SELECT 
@@ -811,9 +817,9 @@ WHERE expected_score != actual_score;
 -- Check 4.3: Generic Raw OSM Tags Extraction (osm_raw_tags)
 CREATE TEMP TABLE mock_raw_tags_test AS
 SELECT 
-    osm_raw_tags('{"amenity":"charging_station","socket:type2":"yes","capacity":"4","payment:app":"yes","@id":"123","@type":"node","@version":"2","@timestamp":"1600000000"}'::JSON) AS tags_charging,
-    osm_raw_tags('{"@id":"456","@type":"node","@version":"1"}'::JSON) AS tags_empty,
-    osm_raw_tags('{"fixme:\"note\"":"check value","addr:street":"Rue de Lyon","@id":"789"}'::JSON) AS tags_special;
+    osm_raw_tags(tags_of('{"amenity":"charging_station","socket:type2":"yes","capacity":"4","payment:app":"yes","@id":"123","@type":"node","@version":"2","@timestamp":"1600000000"}')) AS tags_charging,
+    osm_raw_tags(tags_of('{"@id":"456","@type":"node","@version":"1"}')) AS tags_empty,
+    osm_raw_tags(tags_of('{"fixme:\"note\"":"check value","addr:street":"Rue de Lyon","@id":"789"}')) AS tags_special;
 
 SELECT 
     CASE 
@@ -864,5 +870,56 @@ SELECT
         ELSE error('ACCESS TYPE RESOLUTION TEST FAILED!')
     END AS access_type_check
 FROM mock_access_type_test;
+
+-- ----------------------------------------------------------------------------
+-- Check 4.5: Single-Pass MAP Properties Parsing (legacy JSONPath parity)
+-- Production reads GeoJSON `properties` as MAP(VARCHAR, VARCHAR) and must never
+-- call json_extract_* / json_keys on it (Taiwan OOM invariant). These fixtures pin
+-- the lookup semantics that replaced json_extract_string, so a reader change cannot
+-- silently drift from the legacy JSONPath behaviour.
+-- ----------------------------------------------------------------------------
+CREATE TEMP TABLE mock_map_props_probe AS
+SELECT
+    '{"name":"台北車站","@type":"way","@id":21911886,"@version":11,"@timestamp":1761070027,"disused:amenity":"theatre","fixme:\"note\"":"check"}'::JSON AS legacy_json,
+    tags_of('{"name":"台北車站","@type":"way","@id":21911886,"@version":11,"@timestamp":1761070027,"disused:amenity":"theatre","fixme:\"note\"":"check"}') AS props_map;
+
+SELECT
+    CASE
+        WHEN props_map['name'] = json_extract_string(legacy_json, '$.name')
+         AND props_map['@type'] = json_extract_string(legacy_json, '$.@type')
+         AND props_map['@id'] = json_extract_string(legacy_json, '$.@id')
+         AND props_map['@timestamp'] = json_extract_string(legacy_json, '$.@timestamp')
+         AND props_map['disused:amenity'] = json_extract_string(legacy_json, '$."disused:amenity"')
+         AND props_map['fixme:"note"'] = json_extract_string(legacy_json, '$."fixme:\"note\""')
+         AND props_map['missing_key'] IS NULL
+         AND json_extract_string(legacy_json, '$.missing_key') IS NULL
+         AND TRY_CAST(props_map['@id'] AS BIGINT) = 21911886
+         AND TRY_CAST(props_map['@version'] AS INTEGER) = 11
+        THEN '[OK] MAP lookup parity: numeric @-attributes, quoted & namespaced keys, CJK values and missing keys match json_extract_string exactly'
+        ELSE error('MAP LOOKUP PARITY TEST FAILED: ' || CAST(props_map AS VARCHAR))
+    END AS map_parity_check
+FROM mock_map_props_probe;
+
+-- Value-type parity (bool / nested object / JSON null) and NULL-properties robustness
+CREATE TEMP TABLE mock_map_value_types AS
+SELECT
+    tags_of('{"wheelchair":true,"building":{"yes":1},"note":null,"name":"Nullable"}') AS typed_props,
+    tags_of('{"@id":"1","@type":"node"}') AS tagless_props;
+
+SELECT
+    CASE
+        WHEN typed_props['wheelchair'] = json_extract_string('{"wheelchair":true}'::JSON, '$.wheelchair')
+         AND typed_props['building'] = json_extract_string('{"building":{"yes":1}}'::JSON, '$.building')
+         AND typed_props['note'] IS NULL
+         AND osm_raw_tags(typed_props)['name'] = 'Nullable'
+         AND osm_raw_tags(tagless_props) IS NULL
+         AND is_poi_candidate(NULL) = FALSE
+         AND resolve_poi_name(NULL) IS NULL
+         AND osm_names_common(NULL) IS NULL
+         AND osm_raw_tags(NULL) IS NULL
+        THEN '[OK] MAP value-type parity: booleans, nested objects and JSON null behave like json_extract_string; NULL properties degrade without error'
+        ELSE error('MAP VALUE TYPE TEST FAILED!')
+    END AS map_value_type_check
+FROM mock_map_value_types;
 
 
