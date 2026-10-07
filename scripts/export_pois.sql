@@ -174,11 +174,17 @@ SET disabled_optimizers = 'build_side_probe_side';
 --     view name (osm_json_src) per chunk; the FIFO view definition is stripped there
 --     (registering under an existing view name conflicts with the catalog).
 -- The two activation paths are mutually exclusive and share every downstream rule.
+-- SINGLE-PASS PROPERTIES INVARIANT: `properties` is read as a parsed
+-- MAP(VARCHAR, VARCHAR), never as JSON. DuckDB then parses each GeoJSON record
+-- exactly once (yyjson) and every downstream tag access is a map lookup instead of
+-- a full document re-parse. Re-introducing json_extract_*/json_keys on this column
+-- multiplies per-row cost by the tag count and re-introduces the Taiwan OOM
+-- (see docs/duckdb_gotchas.md).
 CREATE OR REPLACE TEMP VIEW osm_json_src AS
     SELECT * FROM read_json('__INPUT_JSONL__',
                             format='newline_delimited',
                             maximum_object_size=__MAX_OBJECT_SIZE__,
-                            columns={'geometry': 'JSON', 'properties': 'JSON'});
+                            columns={'geometry': 'JSON', 'properties': 'MAP(VARCHAR, VARCHAR)'});
 
 -- Spatial-filter boundary (+ region scale) consumed by the places_export projection.
 -- Injected via sed for the CLI/FIFO path; substituted inline by the Python driver.

@@ -206,7 +206,7 @@ def main(argv=None):
         init_rel = con.read_json(
             empty_chunk,
             format="newline_delimited",
-            columns={"geometry": "JSON", "properties": "JSON"},
+            columns={"geometry": "JSON", "properties": "MAP(VARCHAR, VARCHAR)"},
         ).filter("1=0")
         con.register("osm_json_src", init_rel)
         con.execute(init_sql)
@@ -261,7 +261,7 @@ def main(argv=None):
                 io.BytesIO(chunk),
                 format="newline_delimited",
                 maximum_object_size=int(args.max_object_size),
-                columns={"geometry": "JSON", "properties": "JSON"},
+                columns={"geometry": "JSON", "properties": "MAP(VARCHAR, VARCHAR)"},
             )
             # Rebind the shared view source to the in-memory chunk
             con.register("osm_json_src", rel)

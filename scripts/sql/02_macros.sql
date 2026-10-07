@@ -2,7 +2,7 @@
 
 -- Extract language keys for names: name:<lang>, alt_name, int_name (excluding non-language sub-namespaces & empty strings)
 CREATE OR REPLACE MACRO osm_name_keys(props) AS [
-    k for k in json_keys(props)
+    k for k in map_keys(props)
     if (
         (
             k LIKE 'name:%'
@@ -11,16 +11,16 @@ CREATE OR REPLACE MACRO osm_name_keys(props) AS [
         )
         OR k IN ('alt_name', 'int_name')
     )
-    AND json_extract_string(props, '$."' || k || '"') != ''
+    AND props[k] != ''
 ];
 
 -- Extract language keys for brand names (excluding wikidata, wikipedia)
 CREATE OR REPLACE MACRO osm_brand_keys(props) AS [
-    k for k in json_keys(props)
+    k for k in map_keys(props)
     if k LIKE 'brand:%'
     AND k NOT LIKE 'brand:%:%'
     AND substring(k, 7) NOT IN ('wikidata', 'wikipedia')
-    AND json_extract_string(props, '$."' || k || '"') != ''
+    AND props[k] != ''
 ];
 
 -- Build MAP(VARCHAR, VARCHAR) of all localized names
@@ -28,7 +28,7 @@ CREATE OR REPLACE MACRO osm_names_common(props) AS
 CAST(
     map(
         [CASE WHEN k LIKE 'name:%' THEN substring(k, 6) ELSE k END for k in osm_name_keys(props)],
-        [json_extract_string(props, '$."' || k || '"') for k in osm_name_keys(props)]
+        [props[k] for k in osm_name_keys(props)]
     ) AS MAP(VARCHAR, VARCHAR)
 );
 
@@ -37,13 +37,13 @@ CREATE OR REPLACE MACRO osm_brand_common(props) AS
 CAST(
     map(
         [substring(k, 7) for k in osm_brand_keys(props)],
-        [json_extract_string(props, '$."' || k || '"') for k in osm_brand_keys(props)]
+        [props[k] for k in osm_brand_keys(props)]
     ) AS MAP(VARCHAR, VARCHAR)
 );
 
 -- Extract all raw OSM tag keys (excluding Osmium internal metadata attributes @type, @id, @version, @timestamp)
 CREATE OR REPLACE MACRO osm_raw_keys(props) AS [
-    k for k in json_keys(props)
+    k for k in map_keys(props)
     if not starts_with(k, '@')
 ];
 
@@ -54,7 +54,7 @@ CASE
     THEN CAST(
         map(
             [k for k in osm_raw_keys(props)],
-        [json_extract_string(props, '$."' || replace(replace(k, '\', '\\'), '"', '\"') || '"') for k in osm_raw_keys(props)]
+        [props[k] for k in osm_raw_keys(props)]
     ) AS MAP(VARCHAR, VARCHAR)
     )
     ELSE NULL
@@ -98,27 +98,27 @@ CREATE OR REPLACE MACRO is_temporary_closed_landmark(props, is_area := FALSE) AS
 COALESCE(
     -- 1. Must NOT be permanently destroyed, razed, removed or abandoned
     (
-        COALESCE(json_extract_string(props, '$.abandoned'), 'no') NOT IN ('yes')
-        AND json_extract_string(props, '$.end_date') IS NULL
-        AND json_extract_string(props, '$.ruins') IS NULL
-        AND len([k for k in json_keys(props) if k LIKE 'demolished:%' OR k LIKE 'razed:%' OR k LIKE 'removed:%' OR k LIKE 'abandoned:%' OR k LIKE 'was:%']) = 0
+        COALESCE(props['abandoned'], 'no') NOT IN ('yes')
+        AND props['end_date'] IS NULL
+        AND props['ruins'] IS NULL
+        AND len([k for k in map_keys(props) if k LIKE 'demolished:%' OR k LIKE 'razed:%' OR k LIKE 'removed:%' OR k LIKE 'abandoned:%' OR k LIKE 'was:%']) = 0
     )
     -- 2. Must possess stable identity: readable name + at least 1 verified identity attribute
-    AND json_extract_string(props, '$.name') IS NOT NULL
+    AND props['name'] IS NOT NULL
     AND (
-        json_extract_string(props, '$.wikidata') IS NOT NULL
-        OR json_extract_string(props, '$.wikipedia') IS NOT NULL
-        OR json_extract_string(props, '$.operator') IS NOT NULL
-        OR json_extract_string(props, '$.brand') IS NOT NULL
-        OR json_extract_string(props, '$.addr:street') IS NOT NULL
-        OR json_extract_string(props, '$.addr:postcode') IS NOT NULL
-        OR json_extract_string(props, '$.addr:city') IS NOT NULL
+        props['wikidata'] IS NOT NULL
+        OR props['wikipedia'] IS NOT NULL
+        OR props['operator'] IS NOT NULL
+        OR props['brand'] IS NOT NULL
+        OR props['addr:street'] IS NOT NULL
+        OR props['addr:postcode'] IS NOT NULL
+        OR props['addr:city'] IS NOT NULL
     )
     -- 3. Must be a main facility / structural anchor rather than a detached point or subunit
     AND (
         is_area
-        OR json_extract_string(props, '$.building') IS NOT NULL
-        OR json_extract_string(props, '$.@type') IN ('way', 'relation')
+        OR props['building'] IS NOT NULL
+        OR props['@type'] IN ('way', 'relation')
     )
     -- 4. Must belong to a strictly bounded navigation-relevant landmark category
     AND (
@@ -127,53 +127,53 @@ COALESCE(
             'sports_centre', 'arts_centre', 'library', 'townhall', 'courthouse', 'concert_hall',
             'opera_house', 'planetarium', 'convention_center', 'ferry_terminal'
         ], COALESCE(
-            json_extract_string(props, '$.amenity'),
-            json_extract_string(props, '$."disused:amenity"'),
-            json_extract_string(props, '$."construction:amenity"')
+            props['amenity'],
+            props['disused:amenity'],
+            props['construction:amenity']
         ))
         OR list_contains([
             'theme_park', 'zoo', 'aquarium'
         ], COALESCE(
-            json_extract_string(props, '$.tourism'),
-            json_extract_string(props, '$."disused:tourism"'),
-            json_extract_string(props, '$."construction:tourism"')
+            props['tourism'],
+            props['disused:tourism'],
+            props['construction:tourism']
         ))
         OR list_contains([
             'stadium', 'sports_centre', 'water_park'
         ], COALESCE(
-            json_extract_string(props, '$.leisure'),
-            json_extract_string(props, '$."disused:leisure"'),
-            json_extract_string(props, '$."construction:leisure"')
+            props['leisure'],
+            props['disused:leisure'],
+            props['construction:leisure']
         ))
         OR COALESCE(
-            json_extract_string(props, '$.railway'),
-            json_extract_string(props, '$."disused:railway"'),
-            json_extract_string(props, '$."construction:railway"')
+            props['railway'],
+            props['disused:railway'],
+            props['construction:railway']
         ) = 'station'
         OR COALESCE(
-            json_extract_string(props, '$.aeroway'),
-            json_extract_string(props, '$."disused:aeroway"'),
-            json_extract_string(props, '$."construction:aeroway"')
+            props['aeroway'],
+            props['disused:aeroway'],
+            props['construction:aeroway']
         ) = 'aerodrome'
     )
     -- 5. Must carry an explicit signal of temporary closure, renovation, or construction
     AND (
-        json_extract_string(props, '$."disused:amenity"') IS NOT NULL
-        OR json_extract_string(props, '$."construction:amenity"') IS NOT NULL
-        OR json_extract_string(props, '$."disused:tourism"') IS NOT NULL
-        OR json_extract_string(props, '$."construction:tourism"') IS NOT NULL
-        OR json_extract_string(props, '$."disused:leisure"') IS NOT NULL
-        OR json_extract_string(props, '$."construction:leisure"') IS NOT NULL
-        OR json_extract_string(props, '$."disused:railway"') IS NOT NULL
-        OR json_extract_string(props, '$."construction:railway"') IS NOT NULL
-        OR json_extract_string(props, '$."disused:aeroway"') IS NOT NULL
-        OR json_extract_string(props, '$."construction:aeroway"') IS NOT NULL
-        OR COALESCE(json_extract_string(props, '$.disused'), '') NOT IN ('', 'no')
-        OR COALESCE(json_extract_string(props, '$.construction'), '') NOT IN ('', 'no')
-        OR json_extract_string(props, '$.renovation') IS NOT NULL
-        OR json_extract_string(props, '$."temporary:closure"') IS NOT NULL
-        OR json_extract_string(props, '$.reopening_date') IS NOT NULL
-        OR json_extract_string(props, '$."opening_hours:covid19"') = 'open'
+        props['disused:amenity'] IS NOT NULL
+        OR props['construction:amenity'] IS NOT NULL
+        OR props['disused:tourism'] IS NOT NULL
+        OR props['construction:tourism'] IS NOT NULL
+        OR props['disused:leisure'] IS NOT NULL
+        OR props['construction:leisure'] IS NOT NULL
+        OR props['disused:railway'] IS NOT NULL
+        OR props['construction:railway'] IS NOT NULL
+        OR props['disused:aeroway'] IS NOT NULL
+        OR props['construction:aeroway'] IS NOT NULL
+        OR COALESCE(props['disused'], '') NOT IN ('', 'no')
+        OR COALESCE(props['construction'], '') NOT IN ('', 'no')
+        OR props['renovation'] IS NOT NULL
+        OR props['temporary:closure'] IS NOT NULL
+        OR props['reopening_date'] IS NOT NULL
+        OR props['opening_hours:covid19'] = 'open'
     ),
     FALSE
 );
@@ -181,20 +181,20 @@ COALESCE(
 -- Resolve lifecycle state for temporary closed / under-renovation POIs
 CREATE OR REPLACE MACRO resolve_lifecycle_state(props) AS
 CASE 
-    WHEN json_extract_string(props, '$.renovation') IS NOT NULL 
-      OR json_extract_string(props, '$."disused:amenity"') IS NOT NULL AND json_extract_string(props, '$.renovation') IS NOT NULL THEN 'renovation'
-    WHEN json_extract_string(props, '$."construction:amenity"') IS NOT NULL 
-      OR json_extract_string(props, '$."construction:tourism"') IS NOT NULL 
-      OR json_extract_string(props, '$."construction:leisure"') IS NOT NULL 
-      OR json_extract_string(props, '$."construction:railway"') IS NOT NULL 
-      OR COALESCE(json_extract_string(props, '$.construction'), '') NOT IN ('', 'no') THEN 'reconstruction'
-    WHEN json_extract_string(props, '$."temporary:closure"') IS NOT NULL 
-      OR json_extract_string(props, '$.reopening_date') IS NOT NULL THEN 'temporary_closure'
-    WHEN json_extract_string(props, '$."disused:amenity"') IS NOT NULL 
-      OR json_extract_string(props, '$."disused:tourism"') IS NOT NULL 
-      OR json_extract_string(props, '$."disused:leisure"') IS NOT NULL 
-      OR json_extract_string(props, '$."disused:railway"') IS NOT NULL 
-      OR COALESCE(json_extract_string(props, '$.disused'), '') NOT IN ('', 'no') THEN 'renovation'
+    WHEN props['renovation'] IS NOT NULL 
+      OR props['disused:amenity'] IS NOT NULL AND props['renovation'] IS NOT NULL THEN 'renovation'
+    WHEN props['construction:amenity'] IS NOT NULL 
+      OR props['construction:tourism'] IS NOT NULL 
+      OR props['construction:leisure'] IS NOT NULL 
+      OR props['construction:railway'] IS NOT NULL 
+      OR COALESCE(props['construction'], '') NOT IN ('', 'no') THEN 'reconstruction'
+    WHEN props['temporary:closure'] IS NOT NULL 
+      OR props['reopening_date'] IS NOT NULL THEN 'temporary_closure'
+    WHEN props['disused:amenity'] IS NOT NULL 
+      OR props['disused:tourism'] IS NOT NULL 
+      OR props['disused:leisure'] IS NOT NULL 
+      OR props['disused:railway'] IS NOT NULL 
+      OR COALESCE(props['disused'], '') NOT IN ('', 'no') THEN 'renovation'
     ELSE NULL
 END;
 
@@ -204,39 +204,39 @@ COALESCE(
     -- 1. Must be an area feature (polygon/multipolygon or way/relation) with an explicit, non-empty name
     (
         is_area 
-        OR json_extract_string(props, '$.@type') IN ('way', 'relation')
-        OR json_extract_string(props, '$.building') IS NOT NULL
+        OR props['@type'] IN ('way', 'relation')
+        OR props['building'] IS NOT NULL
     )
-    AND json_extract_string(props, '$.name') IS NOT NULL
-    AND trim(json_extract_string(props, '$.name')) != ''
+    AND props['name'] IS NOT NULL
+    AND trim(props['name']) != ''
     -- 2. Must belong to an eligible search-relevant area domain
     AND (
         -- Search-relevant landuse classes
         list_contains([
             'cemetery', 'recreation_ground', 'village_green', 'allotments',
             'winter_sports', 'quarry', 'orchard', 'vineyard', 'military'
-        ], json_extract_string(props, '$.landuse'))
+        ], props['landuse'])
         -- Search-relevant leisure area classes
         OR list_contains([
             'park', 'nature_reserve', 'common', 'garden', 'golf_course',
             'marina', 'stadium', 'sports_centre', 'pitch', 'track',
             'water_park', 'beach_resort', 'disc_golf_course', 'miniature_golf',
             'dog_park', 'recreation_ground'
-        ], json_extract_string(props, '$.leisure'))
+        ], props['leisure'])
         -- Search-relevant amenity campus / area classes
         OR list_contains([
             'university', 'college', 'school', 'hospital', 'grave_yard',
             'place_of_worship', 'community_centre', 'arts_centre',
             'events_venue', 'marketplace', 'exhibition_centre'
-        ], json_extract_string(props, '$.amenity'))
+        ], props['amenity'])
         -- Search-relevant tourism area classes
         OR list_contains([
             'attraction', 'theme_park', 'zoo', 'aquarium', 'picnic_site', 'camp_site', 'caravan_site'
-        ], json_extract_string(props, '$.tourism'))
+        ], props['tourism'])
         -- Search-relevant historic area classes
         OR list_contains([
             'monument', 'memorial', 'castle', 'archaeological_site', 'ruins', 'fort', 'battlefield'
-        ], json_extract_string(props, '$.historic'))
+        ], props['historic'])
     )
     -- 3. Explicit exclusion policy for non-searchable, purely technical or residential landuse areas
     AND COALESCE(
@@ -244,7 +244,7 @@ COALESCE(
             'residential', 'industrial', 'commercial', 'construction', 'farmland', 'farmyard',
             'forest', 'grass', 'meadow', 'scrub', 'heath', 'basin', 'reservoir',
             'railway', 'brownfield', 'greenfield', 'landfill', 'depot', 'garages'
-        ], json_extract_string(props, '$.landuse')),
+        ], props['landuse']),
         FALSE
     ) = FALSE,
     FALSE
@@ -255,25 +255,25 @@ COALESCE(
 CREATE OR REPLACE MACRO is_named_functional_building(props, is_area := FALSE) AS
 COALESCE(
     is_area
-    AND json_extract_string(props, '$.name') IS NOT NULL
-    AND json_extract_string(props, '$.name') != ''
-    AND list_contains(['office', 'school', 'kindergarten', 'college', 'university', 'hospital', 'civic', 'government', 'fire_station', 'train_station', 'transportation', 'hotel', 'sports_hall', 'stadium', 'retail', 'commercial', 'industrial', 'warehouse'], json_extract_string(props, '$.building'))
+    AND props['name'] IS NOT NULL
+    AND props['name'] != ''
+    AND list_contains(['office', 'school', 'kindergarten', 'college', 'university', 'hospital', 'civic', 'government', 'fire_station', 'train_station', 'transportation', 'hotel', 'sports_hall', 'stadium', 'retail', 'commercial', 'industrial', 'warehouse'], props['building'])
     AND (
         -- For educational and other public/communal buildings, name is sufficient verification
-        json_extract_string(props, '$.building') IN ('school', 'kindergarten', 'college', 'university', 'hospital', 'civic', 'government', 'fire_station', 'train_station', 'transportation')
-        OR json_extract_string(props, '$.addr:street') IS NOT NULL
-        OR json_extract_string(props, '$.addr:postcode') IS NOT NULL
-        OR json_extract_string(props, '$.addr:city') IS NOT NULL
-        OR json_extract_string(props, '$.website') IS NOT NULL
-        OR json_extract_string(props, '$."contact:website"') IS NOT NULL
-        OR json_extract_string(props, '$.phone') IS NOT NULL
-        OR json_extract_string(props, '$."contact:phone"') IS NOT NULL
-        OR json_extract_string(props, '$.email') IS NOT NULL
-        OR json_extract_string(props, '$."contact:email"') IS NOT NULL
-        OR json_extract_string(props, '$.operator') IS NOT NULL
-        OR json_extract_string(props, '$.brand') IS NOT NULL
-        OR json_extract_string(props, '$.wikidata') IS NOT NULL
-        OR json_extract_string(props, '$.wikipedia') IS NOT NULL
+        props['building'] IN ('school', 'kindergarten', 'college', 'university', 'hospital', 'civic', 'government', 'fire_station', 'train_station', 'transportation')
+        OR props['addr:street'] IS NOT NULL
+        OR props['addr:postcode'] IS NOT NULL
+        OR props['addr:city'] IS NOT NULL
+        OR props['website'] IS NOT NULL
+        OR props['contact:website'] IS NOT NULL
+        OR props['phone'] IS NOT NULL
+        OR props['contact:phone'] IS NOT NULL
+        OR props['email'] IS NOT NULL
+        OR props['contact:email'] IS NOT NULL
+        OR props['operator'] IS NOT NULL
+        OR props['brand'] IS NOT NULL
+        OR props['wikidata'] IS NOT NULL
+        OR props['wikipedia'] IS NOT NULL
     ),
     FALSE
 );
@@ -289,57 +289,57 @@ COALESCE(
     OR is_named_functional_building(props, is_area)
     OR (
         (
-            json_extract_string(props, '$.name') IS NOT NULL 
-            OR json_extract_string(props, '$.brand') IS NOT NULL 
+            props['name'] IS NOT NULL 
+            OR props['brand'] IS NOT NULL 
             OR (
-                json_extract_string(props, '$.operator') IS NOT NULL 
-                AND json_extract_string(props, '$.man_made') IS NULL
+                props['operator'] IS NOT NULL 
+                AND props['man_made'] IS NULL
             )
             OR is_utility_infrastructure(
-                json_extract_string(props, '$.amenity'),
-                json_extract_string(props, '$.leisure'),
-                json_extract_string(props, '$.emergency'),
-                json_extract_string(props, '$.highway')
+                props['amenity'],
+                props['leisure'],
+                props['emergency'],
+                props['highway']
             )
         )
         AND (
-            json_extract_string(props, '$.amenity') IS NOT NULL 
-            OR json_extract_string(props, '$.shop') IS NOT NULL 
-            OR json_extract_string(props, '$.tourism') IS NOT NULL 
-            OR json_extract_string(props, '$.leisure') IS NOT NULL 
-            OR json_extract_string(props, '$.office') IS NOT NULL 
-            OR json_extract_string(props, '$.craft') IS NOT NULL 
-            OR json_extract_string(props, '$.healthcare') IS NOT NULL 
-            OR json_extract_string(props, '$.historic') IS NOT NULL 
-            OR json_extract_string(props, '$.railway') IS NOT NULL 
-            OR json_extract_string(props, '$.aeroway') IS NOT NULL
-            OR json_extract_string(props, '$.highway') IN ('rest_area', 'services')
-            OR json_extract_string(props, '$.emergency') = 'defibrillator'
+            props['amenity'] IS NOT NULL 
+            OR props['shop'] IS NOT NULL 
+            OR props['tourism'] IS NOT NULL 
+            OR props['leisure'] IS NOT NULL 
+            OR props['office'] IS NOT NULL 
+            OR props['craft'] IS NOT NULL 
+            OR props['healthcare'] IS NOT NULL 
+            OR props['historic'] IS NOT NULL 
+            OR props['railway'] IS NOT NULL 
+            OR props['aeroway'] IS NOT NULL
+            OR props['highway'] IN ('rest_area', 'services')
+            OR props['emergency'] = 'defibrillator'
             OR (
-                json_extract_string(props, '$.man_made') IS NOT NULL 
-                AND NOT is_micro_man_made(json_extract_string(props, '$.man_made'))
-                AND (json_extract_string(props, '$.name') IS NOT NULL OR json_extract_string(props, '$.brand') IS NOT NULL)
+                props['man_made'] IS NOT NULL 
+                AND NOT is_micro_man_made(props['man_made'])
+                AND (props['name'] IS NOT NULL OR props['brand'] IS NOT NULL)
             )
         )
         AND (
-            json_extract_string(props, '$.amenity') IS NULL 
-            OR NOT is_micro_infrastructure(json_extract_string(props, '$.amenity'))
-            OR json_extract_string(props, '$.shop') IS NOT NULL
-            OR (json_extract_string(props, '$.tourism') IS NOT NULL AND json_extract_string(props, '$.tourism') != 'information')
-            OR json_extract_string(props, '$.historic') IS NOT NULL
-            OR json_extract_string(props, '$.office') IS NOT NULL
-            OR json_extract_string(props, '$.craft') IS NOT NULL
-            OR json_extract_string(props, '$.healthcare') IS NOT NULL
+            props['amenity'] IS NULL 
+            OR NOT is_micro_infrastructure(props['amenity'])
+            OR props['shop'] IS NOT NULL
+            OR (props['tourism'] IS NOT NULL AND props['tourism'] != 'information')
+            OR props['historic'] IS NOT NULL
+            OR props['office'] IS NOT NULL
+            OR props['craft'] IS NOT NULL
+            OR props['healthcare'] IS NOT NULL
         )
         AND (
-            NOT is_info_micro_infrastructure(json_extract_string(props, '$.tourism'), json_extract_string(props, '$.information'))
-            OR json_extract_string(props, '$.shop') IS NOT NULL
-            OR json_extract_string(props, '$.historic') IS NOT NULL
-            OR json_extract_string(props, '$.office') IS NOT NULL
-            OR json_extract_string(props, '$.craft') IS NOT NULL
-            OR json_extract_string(props, '$.healthcare') IS NOT NULL
-            OR (json_extract_string(props, '$.amenity') IS NOT NULL AND NOT is_micro_infrastructure(json_extract_string(props, '$.amenity')))
-            OR json_extract_string(props, '$.leisure') IS NOT NULL
+            NOT is_info_micro_infrastructure(props['tourism'], props['information'])
+            OR props['shop'] IS NOT NULL
+            OR props['historic'] IS NOT NULL
+            OR props['office'] IS NOT NULL
+            OR props['craft'] IS NOT NULL
+            OR props['healthcare'] IS NOT NULL
+            OR (props['amenity'] IS NOT NULL AND NOT is_micro_infrastructure(props['amenity']))
+            OR props['leisure'] IS NOT NULL
         )
     ),
     FALSE
@@ -348,8 +348,8 @@ COALESCE(
 -- Resolve primary name of POI (leaves untagged physical POIs without pseudo-names; decouples operator)
 CREATE OR REPLACE MACRO resolve_poi_name(props) AS
 COALESCE(
-    json_extract_string(props, '$.name'),
-    json_extract_string(props, '$.brand')
+    props['name'],
+    props['brand']
 );
 
 -- Format address array conforming to Overture Places schema
@@ -394,7 +394,7 @@ CREATE OR REPLACE MACRO rule_lang(k) AS
   CASE WHEN k LIKE '%:%' THEN split_part(k, ':', 2) ELSE NULL END;
 
 CREATE OR REPLACE MACRO osm_name_rule_keys(props) AS [
-  k for k in json_keys(props)
+  k for k in map_keys(props)
   if (
     k IN ('alt_name', 'official_name', 'short_name', 'loc_name', 'reg_name', 'int_name', 'nickname')
     OR (k LIKE 'alt_name:%' AND k NOT LIKE 'alt_name:%:%')
@@ -404,7 +404,7 @@ CREATE OR REPLACE MACRO osm_name_rule_keys(props) AS [
     OR (k LIKE 'reg_name:%' AND k NOT LIKE 'reg_name:%:%')
     OR (k LIKE 'nickname:%' AND k NOT LIKE 'nickname:%:%')
   )
-  AND json_extract_string(props, '$."' || k || '"') != ''
+  AND props[k] != ''
 ];
 
 -- Build Overture-conforming STRUCT[] for names.rules
@@ -417,7 +417,7 @@ CREATE OR REPLACE MACRO osm_names_rules(props) AS
         'variant': rule_variant(k),
         'language': rule_lang(k),
         'perspectives': CAST(NULL AS STRUCT("mode" VARCHAR, countries VARCHAR[])),
-        'value': json_extract_string(props, '$."' || k || '"'),
+        'value': props[k],
         'between': CAST(NULL AS DOUBLE[]),
         'side': CAST(NULL AS VARCHAR)
       }
@@ -442,27 +442,27 @@ CREATE OR REPLACE MACRO extract_socials(props) AS
   s for s in list_distinct([
     format_social_url(
       'https://www.facebook.com/', 
-      COALESCE(json_extract_string(props, '$.contact:facebook'), json_extract_string(props, '$.facebook'))
+      COALESCE(props['contact:facebook'], props['facebook'])
     ),
     format_social_url(
       'https://www.instagram.com/', 
-      COALESCE(json_extract_string(props, '$.contact:instagram'), json_extract_string(props, '$.instagram'))
+      COALESCE(props['contact:instagram'], props['instagram'])
     ),
     format_social_url(
       'https://x.com/', 
-      COALESCE(json_extract_string(props, '$.contact:twitter'), json_extract_string(props, '$.contact:x'), json_extract_string(props, '$.twitter'))
+      COALESCE(props['contact:twitter'], props['contact:x'], props['twitter'])
     ),
     format_social_url(
       'https://www.linkedin.com/company/', 
-      COALESCE(json_extract_string(props, '$.contact:linkedin'), json_extract_string(props, '$.linkedin'))
+      COALESCE(props['contact:linkedin'], props['linkedin'])
     ),
     format_social_url(
       'https://www.youtube.com/', 
-      COALESCE(json_extract_string(props, '$.contact:youtube'), json_extract_string(props, '$.youtube'))
+      COALESCE(props['contact:youtube'], props['youtube'])
     ),
     format_social_url(
       'https://www.tiktok.com/@', 
-      COALESCE(json_extract_string(props, '$.contact:tiktok'), json_extract_string(props, '$.tiktok'))
+      COALESCE(props['contact:tiktok'], props['tiktok'])
     )
   ])
   if s IS NOT NULL AND s != ''

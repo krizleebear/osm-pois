@@ -13,8 +13,8 @@ CREATE OR REPLACE TEMP VIEW places_export AS
         WHERE (
             is_poi_candidate(properties)
             OR (
-                json_extract_string(properties, '$.building') IN ('office', 'school', 'kindergarten', 'college', 'university', 'hospital', 'civic', 'government', 'fire_station', 'train_station', 'transportation', 'hotel', 'sports_hall', 'stadium', 'retail', 'commercial', 'industrial', 'warehouse')
-                AND json_extract_string(properties, '$.name') IS NOT NULL
+                properties['building'] IN ('office', 'school', 'kindergarten', 'college', 'university', 'hospital', 'civic', 'government', 'fire_station', 'train_station', 'transportation', 'hotel', 'sports_hall', 'stadium', 'retail', 'commercial', 'industrial', 'warehouse')
+                AND properties['name'] IS NOT NULL
             )
         )
         AND geometry IS NOT NULL
@@ -30,11 +30,11 @@ CREATE OR REPLACE TEMP VIEW places_export AS
     ),
     raw_features AS (
         SELECT 
-            'osm:' || json_extract_string(properties, '$.@type') || '/' || json_extract_string(properties, '$.@id') AS id,
-            TRY_CAST(json_extract_string(properties, '$.@version') AS INTEGER) AS osm_version,
+            'osm:' || properties['@type'] || '/' || properties['@id'] AS id,
+            TRY_CAST(properties['@version'] AS INTEGER) AS osm_version,
             CASE 
-                WHEN json_extract_string(properties, '$.@timestamp') IS NOT NULL 
-                THEN strftime(to_timestamp(TRY_CAST(json_extract_string(properties, '$.@timestamp') AS BIGINT)), '%Y-%m-%dT%H:%M:%SZ') 
+                WHEN properties['@timestamp'] IS NOT NULL 
+                THEN strftime(to_timestamp(TRY_CAST(properties['@timestamp'] AS BIGINT)), '%Y-%m-%dT%H:%M:%SZ') 
                 ELSE NULL 
             END AS osm_timestamp,
             resolve_poi_name(properties) AS name,
@@ -42,66 +42,66 @@ CREATE OR REPLACE TEMP VIEW places_export AS
             osm_names_rules(properties) AS names_rules,
             osm_brand_common(properties) AS brand_common,
             COALESCE(
-                json_extract_string(properties, '$.amenity'),
-                json_extract_string(properties, '$."disused:amenity"'),
-                json_extract_string(properties, '$."construction:amenity"')
+                properties['amenity'],
+                properties['disused:amenity'],
+                properties['construction:amenity']
             ) AS amenity,
-            json_extract_string(properties, '$.religion') AS religion,
-            json_extract_string(properties, '$.denomination') AS denomination,
-            json_extract_string(properties, '$.cuisine') AS cuisine,
-            json_extract_string(properties, '$.shop') AS shop,
+            properties['religion'] AS religion,
+            properties['denomination'] AS denomination,
+            properties['cuisine'] AS cuisine,
+            properties['shop'] AS shop,
             COALESCE(
-                json_extract_string(properties, '$.tourism'),
-                json_extract_string(properties, '$."disused:tourism"'),
-                json_extract_string(properties, '$."construction:tourism"')
+                properties['tourism'],
+                properties['disused:tourism'],
+                properties['construction:tourism']
             ) AS tourism,
-            json_extract_string(properties, '$.information') AS information,
-            json_extract_string(properties, '$.entrance') AS entrance,
+            properties['information'] AS information,
+            properties['entrance'] AS entrance,
             COALESCE(
-                json_extract_string(properties, '$.leisure'),
-                json_extract_string(properties, '$."disused:leisure"'),
-                json_extract_string(properties, '$."construction:leisure"')
+                properties['leisure'],
+                properties['disused:leisure'],
+                properties['construction:leisure']
             ) AS leisure,
-            json_extract_string(properties, '$.office') AS office,
-            json_extract_string(properties, '$.building') AS building,
-            json_extract_string(properties, '$.craft') AS craft,
-            json_extract_string(properties, '$.healthcare') AS healthcare,
-            json_extract_string(properties, '$.historic') AS historic,
-            json_extract_string(properties, '$.sport') AS sport,
-            json_extract_string(properties, '$.landuse') AS landuse,
+            properties['office'] AS office,
+            properties['building'] AS building,
+            properties['craft'] AS craft,
+            properties['healthcare'] AS healthcare,
+            properties['historic'] AS historic,
+            properties['sport'] AS sport,
+            properties['landuse'] AS landuse,
             COALESCE(
-                json_extract_string(properties, '$.aeroway'),
-                json_extract_string(properties, '$."disused:aeroway"'),
-                json_extract_string(properties, '$."construction:aeroway"')
+                properties['aeroway'],
+                properties['disused:aeroway'],
+                properties['construction:aeroway']
             ) AS aeroway,
             COALESCE(
-                json_extract_string(properties, '$.railway'),
-                json_extract_string(properties, '$."disused:railway"'),
-                json_extract_string(properties, '$."construction:railway"')
+                properties['railway'],
+                properties['disused:railway'],
+                properties['construction:railway']
             ) AS railway,
-            json_extract_string(properties, '$.station') AS station,
-            json_extract_string(properties, '$.man_made') AS man_made,
-            json_extract_string(properties, '$.emergency') AS emergency,
-            json_extract_string(properties, '$.highway') AS highway,
-            json_extract_string(properties, '$.operator') AS operator,
-            json_extract_string(properties, '$.ref') AS ref,
-            json_extract_string(properties, '$.brand') AS brand,
-            json_extract_string(properties, '$.brand:wikidata') AS brand_wikidata,
-            json_extract_string(properties, '$.addr:street') AS addr_street,
-            json_extract_string(properties, '$.addr:housenumber') AS addr_housenumber,
-            json_extract_string(properties, '$.addr:postcode') AS addr_postcode,
-            json_extract_string(properties, '$.addr:city') AS addr_city,
-            COALESCE(json_extract_string(properties, '$.website'), json_extract_string(properties, '$.contact:website')) AS website,
-            COALESCE(json_extract_string(properties, '$.phone'), json_extract_string(properties, '$.contact:phone')) AS phone,
-            COALESCE(json_extract_string(properties, '$.email'), json_extract_string(properties, '$.contact:email')) AS email,
+            properties['station'] AS station,
+            properties['man_made'] AS man_made,
+            properties['emergency'] AS emergency,
+            properties['highway'] AS highway,
+            properties['operator'] AS operator,
+            properties['ref'] AS ref,
+            properties['brand'] AS brand,
+            properties['brand:wikidata'] AS brand_wikidata,
+            properties['addr:street'] AS addr_street,
+            properties['addr:housenumber'] AS addr_housenumber,
+            properties['addr:postcode'] AS addr_postcode,
+            properties['addr:city'] AS addr_city,
+            COALESCE(properties['website'], properties['contact:website']) AS website,
+            COALESCE(properties['phone'], properties['contact:phone']) AS phone,
+            COALESCE(properties['email'], properties['contact:email']) AS email,
             extract_socials(properties) AS socials,
             -- Extended operational attributes (Superset extension)
-            json_extract_string(properties, '$.opening_hours') AS opening_hours,
-            json_extract_string(properties, '$.wheelchair') AS wheelchair,
+            properties['opening_hours'] AS opening_hours,
+            properties['wheelchair'] AS wheelchair,
             extract_payment_methods(properties) AS payment_methods,
             extract_poi_level(properties) AS level,
-            json_extract_string(properties, '$.delivery') AS delivery,
-            json_extract_string(properties, '$.takeaway') AS takeaway,
+            properties['delivery'] AS delivery,
+            properties['takeaway'] AS takeaway,
             is_temporary_closed_landmark(properties, ST_GeometryType(geom) IN ('POLYGON', 'MULTIPOLYGON')) AS is_temp_closed,
             resolve_lifecycle_state(properties) AS lifecycle_state,
             osm_raw_tags(properties) AS tags,
@@ -112,14 +112,14 @@ CREATE OR REPLACE TEMP VIEW places_export AS
             calculate_poi_confidence(
                 properties,
                 ST_GeometryType(geom) IN ('POLYGON', 'MULTIPOLYGON'),
-                TRY_CAST(json_extract_string(properties, '$.@version') AS INTEGER),
+                TRY_CAST(properties['@version'] AS INTEGER),
                 CASE 
-                    WHEN json_extract_string(properties, '$.@timestamp') IS NOT NULL 
-                    THEN strftime(to_timestamp(TRY_CAST(json_extract_string(properties, '$.@timestamp') AS BIGINT)), '%Y-%m-%dT%H:%M:%SZ') 
+                    WHEN properties['@timestamp'] IS NOT NULL 
+                    THEN strftime(to_timestamp(TRY_CAST(properties['@timestamp'] AS BIGINT)), '%Y-%m-%dT%H:%M:%SZ') 
                     ELSE NULL 
                 END,
-                COALESCE(json_extract_string(properties, '$.website'), json_extract_string(properties, '$.contact:website')) IS NOT NULL,
-                COALESCE(json_extract_string(properties, '$.phone'), json_extract_string(properties, '$.contact:phone')) IS NOT NULL
+                COALESCE(properties['website'], properties['contact:website']) IS NOT NULL,
+                COALESCE(properties['phone'], properties['contact:phone']) IS NOT NULL
             ) AS confidence,
             CASE 
                 WHEN ST_GeometryType(geom) IN ('POLYGON', 'MULTIPOLYGON') 
