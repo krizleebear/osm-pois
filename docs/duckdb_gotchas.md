@@ -102,3 +102,36 @@ WHERE bbox.xmin >= 5.86 AND bbox.xmax <= 15.04
   AND addresses[1].country = 'DE'
 GROUP BY ALL;
 ```
+
+---
+
+## 5. DuckDB Python Streaming Driver (`scripts/entrypoint.py`)
+
+The chunked driver replaced the FIFO/awk orchestration in `scripts/entrypoint.sh` to bypass the JSON reader's named-pipe cache OOM (Root Cause #2 of the US-east SIGKILL). See `AGENTS.md` and the HANDOFF doc for the full rationale. Hard-won APIs & pitfalls:
+
+### 5.1. `read_json(io.BytesIO(...))` Requires `fsspec`
+* `duckdb.read_json(io.BytesIO(b'...'), format='newline_delimited', ..., columns={...})` works, but **only if the `fsspec` package is importable**. Without it DuckDB raises:
+  ```
+  Invalid Input Error: ... required module 'fsspec' is not installed
+  ```
+* On Ubuntu 24.04+/26.04 (PEP 668) install with `python3 -m pip install --break-system-packages duckdb==1.5.5 fsspec`. The image pins both (`ghcr.io/krizleebear/osm2parquet:v1.1.0`).
+* Passing a `BytesIO` object as a SQL parameter (e.g. `con.execute("SELECT * FROM read_json(?, ...)", [io.BytesIO(...)])`) throws `NotImplementedException` — always build the relation via `con.read_json(...)` and register it.
+
+### 5.2. `register()` Name Collisions with Views
+* `con.register('name', rel)` fails with `CatalogException: View with name "name" already exists` if a temp view (or table) with the same name exists in the session catalog.
+* The driver therefore **strips the FIFO `osm_json_src` view** from the shared `scripts/export_pois.sql` init script and instead registers each BytesIO chunk under that exact name (mutually exclusive activation paths).
+
+### 5.3. `CREATE VIEW` Binds its Source Schema Eagerly
+* A view whose body reads `FROM osm_json_src` fails to `CREATE` while `osm_json_src` does not exist yet. You cannot define the view "lazily" ahead of the first chunk.
+* Driver recipe: register chunk N → `con.execute(<06 transform>)` (`CREATE OR REPLACE TEMP VIEW places_export`) → `INSERT INTO stage SELECT * FROM places_export` → register chunk N+1 → repeat. Re-binding the view per chunk is deterministic and cheap.
+
+### 5.4. `INSERT ... SELECT` Returns `(affected,)`, Not `rowcount`
+* `con.execute("INSERT INTO stage SELECT ...").fetchone()` returns a single-row result `(n,)` where `n` is the number of inserted rows (`(0,)` when a filter matched nothing). `cursor.rowcount` stays `-1`. Count correctly with `fetchone()[0]`.
+* DuckDB does **not** support data-modifying CTEs: `WITH ins AS (INSERT ... RETURNING id) SELECT count(*) ...` is a parser error.
+
+### 5.5. Bounded Memory: Persistent Database File, not `TEMP`
+* A persistent connection (`duckdb.connect('/tmp/.../stage.duckdb')`, NOT `duckdb.connect()` in-memory) allows the **buffer manager to evict staging-table blocks to the `.duckdb` file** under memory pressure. `CREATE TEMP TABLE` deliberately never spills — the accumulation table must be a **persistent** table. Measured: DE (487 MB PBF) → 3,185,955 POIs staged in 30 chunks at ~2.9 GB peak RSS, bounded regardless of total input size.
+* `temp_directory` spills *intermediate* operator output (sorts/hashes); it does not spill base table data.
+
+### 5.6. Multi-Statement `con.execute()` Works
+* `con.execute(sql_with_many_statements; ; ...)` executes the whole script (including `CREATE MACRO` and `SET VARIABLE ... = (SELECT ...)`), so the driver can bootstrap the entire modular pipeline by expanding the `.read` dot-commands inline (dot-commands themselves are not executable from the Python API).

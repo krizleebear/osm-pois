@@ -87,6 +87,15 @@ On large country extracts (e.g. Germany with 8.3M OSM features → 3.18M POIs), 
   ```
   and access them via `getvariable('taxonomy_lookup')`, which guarantees a 100% streaming physical plan composed exclusively of `PROJECTION` operators.
 
+### 3.6. Chunked Python Streaming Driver (`scripts/entrypoint.py`)
+The US-east SIGKILL exposed a second, independent memory amplifier (Root Cause #2): DuckDB's JSON reader attempts to **size a named pipe by reading it once into a cache**; with no file size, the pipe-cache grows linearly with the input, so memory scales with the *entire* extract instead of the 100 MB architecture budget. `scripts/entrypoint.sh` now delegates STAGE 2 to `scripts/entrypoint.py` (DuckDB Python API), which:
+* reads `osmium export`'s GeoJSONSeq stdout in **line-aligned ~100 MB chunks** (`OSM_POIS_CHUNK_BYTES`, default 104857600) and strips the `0x1e` record separator in-process,
+* registers each chunk as an **in-memory `io.BytesIO` relation** under `osm_json_src` (requires `fsspec`; a regular file, sized file, or BytesIO gives `read_json` a real size — no pipe cache),
+* runs the *identical* shared transform view (`scripts/sql/06_places_transform.sql`, single source of truth) per chunk and accumulates into a **disk-backed staging table** in a persistent `.duckdb` database (buffer-manager spill → bounded RSS),
+* writes a **single final GeoParquet** with the full KV_METADATA provenance block re-used verbatim from `scripts/export_pois.sql` — zero intermediate Parquet parts, zero merges.
+
+Measured on the DE touchstone (487 MB PBF, 8.3M features → **3,185,955 POIs**): 30 chunks, ~2.9 GB peak RSS (previously ~4.5–4.7 GB and linearly growing in the old FIFO pipe-cache path), 360 s on 12 cores. The CLI/FIFO path remains in `scripts/export_pois.sql` and is pinned by `tests/test_streaming_plan.sh`; `tests/test_chunked_streaming.sh` proves chunked vs single-chunk bit-identity (md5) and KV_METADATA integrity.
+
 ---
 
 ## 4. Spatial Partitioning & Transparent Parquet Merge

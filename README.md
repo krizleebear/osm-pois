@@ -7,7 +7,7 @@ Transforms cached OSM `.osm.pbf` extracts into cloud-optimized GeoParquet files 
 ## 🎯 Features
 
 - **100% Overture Maps Schema Compatible**: Drop-in replacement for Overture Places in pipelines like [`osm-geocoder`](https://github.com/krizleebear/osm-geocoder).
-- **Zero New Docker Images**: Directly reuses the existing, production-proven `ghcr.io/krizleebear/osm2parquet:v1.0.10` container (equipped with `DuckDB CLI` + `spatial` extension + `osmium-tool`).
+- **Zero New Docker Images**: Directly reuses the existing, production-proven `ghcr.io/krizleebear/osm2parquet:v1.1.0` container (equipped with `DuckDB CLI` + Python API + `spatial` extension + `fsspec` + `osmium-tool`).
 - **Pure OpenStreetMap Data (ODbL)**: Full provenance, freshly compiled from daily/weekly OSM PBF dumps.
 - **2,100+ Category Mappings**: Direct taxonomy mapping from OSM tags (`amenity`, `shop`, `tourism`, `leisure`, `office`, `craft`, `healthcare`, `historic`) to Overture taxonomy categories.
 - **Serverless & Fast**: Runs via Azure Pipelines parallel matrix across 150+ countries/regions.
@@ -23,12 +23,14 @@ osm-pois/
 │   ├── overture_categories.csv         # Overture taxonomy hierarchy
 │   └── overture_to_osm_categories.csv  # 2,100+ OSM tag to Overture category rules
 ├── scripts/
-│   ├── entrypoint.sh            # Runner script for DuckDB conversion
+│   ├── entrypoint.sh            # Runner script (CLI wrapper, US split, monitoring, validation)
+│   ├── entrypoint.py            # Chunked streaming driver (DuckDB Python API, BytesIO ingest)
 │   ├── export_pois.sql          # Orchestrator for DuckDB conversion & Parquet export
 │   └── sql/                     # Modular DuckDB SQL components
 │       ├── 01_taxonomy.sql      # Taxonomy & category mapping rules loader
 │       ├── 02_macros.sql        # Reusable macros (names, brand, addresses, filters)
-│       └── 03_categorization.sql# POI category resolution (Single Source of Truth)
+│       ├── 03_categorization.sql# POI category resolution (Single Source of Truth)
+│       └── 06_places_transform.sql # places_export transform view (single source of truth)
 └── README.md
 ```
 

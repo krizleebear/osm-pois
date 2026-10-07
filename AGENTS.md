@@ -14,9 +14,10 @@ This document guides AI coding agents (such as Antigravity CLI / `agy`, OpenCode
   * It compiles **ALL points of interest** across all commercial, social, cultural, administrative, and service tiers (restaurants, shops, offices, crafts, healthcare, tourism, leisure, services, transport, etc.) into the Overture schema.
 * **Core Technology Stack**:
   * **DuckDB CLI** with `spatial` and `httpfs` extensions (SQL-based transformations, zero Java/JVM dependencies).
-  * **Osmium-Tool** (`osmium export` and `osmium tags-filter`) for high-throughput pre-filtering and zero-disk streaming of GeoJSON sequences via FIFO pipes directly into DuckDB.
+  * **DuckDB Python API** (`duckdb==1.5.5` + `fsspec`) in `scripts/entrypoint.py` for chunked, memory-bounded streaming ingestion.
+  * **Osmium-Tool** (`osmium export` and `osmium tags-filter`) for high-throughput pre-filtering and zero-disk streaming of GeoJSON sequences.
   * **Azure DevOps Pipelines** for parallel matrix builds across 150+ countries/regions.
-  * **Zero Intermediate Disk I/O**: `osmium export` streams newline-delimited GeoJSON features directly into DuckDB via a named pipe (`mkfifo`), bypassing GDAL's 100 MB SQLite cache limitation and reconstructing 100% of points, ways, and polygons.
+  * **Zero Intermediate Disk I/O**: `scripts/entrypoint.py` streams newline-delimited GeoJSON features from `osmium export` stdout in bounded ~100 MB line-aligned chunks (registered as in-memory `BytesIO` via `duckdb.read_json`), bypassing GDAL's 100 MB SQLite cache limitation and the JSON reader's named-pipe cache OOM while reconstructing 100% of points, ways, and polygons. The CLI/FIFO variant of `scripts/export_pois.sql` remains as reference/pinned by `tests/test_streaming_plan.sh`.
 
 ---
 
@@ -34,14 +35,16 @@ osm-pois/
 │   ├── overture_to_osm_categories.csv      # 2,100+ OSM tag rules mapped to Overture categories
 │   └── README.md                           # Provenance & license info for category mappings
 ├── scripts/
-│   ├── entrypoint.sh                       # CLI runner script for DuckDB conversion
+│   ├── entrypoint.sh                       # CLI runner script (US split, monitor, validation)
+│   ├── entrypoint.py                       # Chunked streaming driver (DuckDB Python API + fsspec)
 │   ├── export_pois.sql                     # Core DuckDB SQL conversion orchestrator
 │   └── sql/                                # Modular DuckDB SQL components
 │       ├── 01_taxonomy.sql                 # Taxonomy & category mapping rules loader
 │       ├── 02_macros.sql                   # Reusable macros (names, brand, addresses, filters)
 │       ├── 03_categorization.sql           # POI category resolution (Single Source of Truth)
 │       ├── 04_confidence.sql               # POI confidence scoring model
-│       └── 05_relations.sql                # Relation membership & access type resolution macros
+│       ├── 05_relations.sql                # Relation membership & access type resolution macros
+│       └── 06_places_transform.sql         # places_export transform view (Single Source of Truth)
 └── tests/
     ├── test_conversion.sh                  # Local integration test runner
     └── fixtures/                           # Test PBF fixtures (e.g. Monaco)
@@ -55,7 +58,7 @@ When modifying or generating code in this repository, you **MUST** follow these 
 
 1. **Zero New Heavy Dependencies**:
    * Do not introduce JVM/Java, heavy Python runtimes, or unneeded container images.
-   * Everything runs in the existing container `ghcr.io/krizleebear/osm2parquet:v1.0.10` (contains DuckDB + spatial + osmium).
+   * Everything runs in the existing container `ghcr.io/krizleebear/osm2parquet:v1.1.0` (contains DuckDB CLI + Python API + spatial + fsspec + osmium).
 2. **Point-on-Surface (No Centroids!)**:
    * For areas, buildings, or relations, **NEVER** use `ST_Centroid()`. Always use `ST_PointOnSurface(geom)` so that the representative coordinate stays within the physical boundary of the feature.
 3. **Deterministic Category Precedence**:
@@ -142,11 +145,11 @@ To ensure consistent pipeline execution, reproducible releases, and clean Git wo
 8. **Container Security & Dependency Invariance (No Root Elevation / No Dynamic Package Install)**:
    - Pipeline steps and container configurations must strictly run unprivileged and must NEVER escalate to root permissions (`--user 0:0` or `sudo`) to bypass container limitations. All required execution binaries (e.g. Python 3, DuckDB, Osmium) must be pre-packaged directly in the container image, and pipeline steps must never perform dynamic runtime package installation (`apt-get install`).
 9. **Local Clean-Room Container Verification**:
-   - Before committing pipeline modifications or scripts, verify execution inside the local Docker container environment (`ghcr.io/krizleebear/osm2parquet:v1.0.10`) to prevent missing-dependency failures in CI runners.
+   - Before committing pipeline modifications or scripts, verify execution inside the local Docker container environment (`ghcr.io/krizleebear/osm2parquet:v1.1.0`) to prevent missing-dependency failures in CI runners.
 10. **Workspace Boundary Scoping**:
     - Limit all grep and file searches strictly to active workspace directories without traversing parent directories.
 11. **1-Pass PBF Extraction & Zero-Disk Stream Performance Invariant**:
-    - Large raw PBF files must be scanned only ONCE. Avoid multiple redundant reading passes over multi-gigabyte PBF extracts. Use `osmium export` or `osmium tags-filter` streaming directly through named pipes (`mkfifo`) into DuckDB to eliminate intermediate disk I/O.
+    - Large raw PBF files must be scanned only ONCE. Avoid multiple redundant reading passes over multi-gigabyte PBF extracts. Ingest `osmium export`'s GeoJSONSeq stdout in bounded line-aligned chunks via `scripts/entrypoint.py` (in-memory `BytesIO` relation per chunk, so `read_json` sees a real size instead of an unsized named pipe whose cache grows with the whole input). Use `osmium tags-filter` for the relations OPL index. Never trigger intermediate disk I/O for the ingest stream.
 12. **Token-Efficient Tabular Data Analysis (DuckDB-First Invariant)**:
     - When inspecting or auditing large tabular files (`mappings/*.csv`, `*.parquet`, `*.jsonl`), agents must **NEVER** dump the entire file into the prompt context or rewrite entire files from scratch.
     - Use the DuckDB CLI directly from bash (`duckdb -c "SELECT ... FROM read_csv('mappings/...') ..."`) to filter, aggregate, group, and inspect data out-of-core, returning only concise diagnostic results.
@@ -184,8 +187,9 @@ Verify end-to-end PBF-to-GeoParquet conversion:
 
 This will:
 1. Ensure the Monaco sample PBF fixture exists (or downloads it if missing).
-2. Run `scripts/entrypoint.sh` using DuckDB.
-3. Assert row count, schema validity, category assignment, and address coverage.
+2. Run `scripts/entrypoint.sh` (which delegates streaming to the chunked Python driver `scripts/entrypoint.py` using DuckDB).
+3. Run `tests/test_chunked_streaming.sh`: force 10+ tiny ingest chunks and assert the result is bit-identical (md5) to a single-chunk run, with the KV_METADATA provenance block intact.
+4. Assert row count, schema validity, category assignment, and address coverage.
 
 ### Ad-hoc Validation with DuckDB
 
