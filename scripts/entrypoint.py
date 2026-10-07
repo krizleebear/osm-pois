@@ -39,6 +39,8 @@ OSM_EXPORT_ARGS = (
     "--geometry-types=point,polygon",
     "--attributes=type,id,version,timestamp",
     "--output-format=geojsonseq",
+    "-x",
+    "print_record_separator=false",
 )
 
 
@@ -83,8 +85,9 @@ def extract_kv_metadata(export_sql):
 
 
 def iter_jsonl_chunks(proc, chunk_bytes):
-    """Yield osmium's stdout in line-aligned chunks, stripping the GeoJSONSeq
-    record separator (0x1e). Overshoots the target only by a single line."""
+    """Yield osmium's stdout in line-aligned chunks.
+    Record separators (0x1e) are natively suppressed by osmium (-x print_record_separator=false),
+    with a fallback strip if any stray RS byte is encountered."""
     buf = bytearray()
     while True:
         data = proc.stdout.read(1 << 20)
@@ -95,10 +98,16 @@ def iter_jsonl_chunks(proc, chunk_bytes):
             nl = buf.rfind(b"\n")
             if nl == -1:
                 break  # single record larger than the target; keep buffering
-            yield bytes(buf[: nl + 1]).replace(bytes([RS_BYTE]), b"")
+            chunk = bytes(buf[: nl + 1])
             del buf[: nl + 1]
+            if RS_BYTE in chunk:
+                chunk = chunk.replace(bytes([RS_BYTE]), b"")
+            yield chunk
     if buf:
-        yield bytes(buf).replace(bytes([RS_BYTE]), b"")
+        chunk = bytes(buf)
+        if RS_BYTE in chunk:
+            chunk = chunk.replace(bytes([RS_BYTE]), b"")
+        yield chunk
 
 
 def parse_args(argv):
@@ -192,14 +201,26 @@ def main(argv=None):
     stage_db = os.path.join(args.tmp_dir, "osmpois_stage.duckdb")
     con = duckdb.connect(stage_db)
     try:
+        # Register an initial empty schema relation under osm_json_src so transform_sql can be bound once
+        empty_chunk = io.BytesIO(b'{"geometry": null, "properties": null}\n')
+        init_rel = con.read_json(
+            empty_chunk,
+            format="newline_delimited",
+            columns={"geometry": "JSON", "properties": "JSON"},
+        ).filter("1=0")
+        con.register("osm_json_src", init_rel)
         con.execute(init_sql)
+        con.execute(transform_sql)
+        # Suppress periodic WAL checkpoints during batch staging inserts to avoid write amplification
+        con.execute("SET wal_autocheckpoint = '1TB';")
+        con.execute("SET checkpoint_threshold = '1TB';")
+        con.execute("CREATE TABLE stage AS SELECT * FROM places_export LIMIT 0")
     except Exception as exc:
         raise RuntimeError(
             "DuckDB session bootstrap failed. Check sqlite/staging permissions, "
             "the spatial extension installation and the relations OPL file."
         ) from exc
 
-    stage_ready = False
     total_staged = 0
     total_features = 0
     started = time.time()
@@ -227,6 +248,9 @@ def main(argv=None):
     chunk_no = 0
     returncode = None
     err = b""
+    spatial_wheres = (" WHERE 1=1 " + args.spatial_filter) if args.spatial_filter else ""
+    insert_sql = "INSERT INTO stage SELECT * FROM places_export" + spatial_wheres
+
     try:
         for chunk in iter_jsonl_chunks(proc, chunk_bytes):
             if not chunk.strip():
@@ -239,21 +263,15 @@ def main(argv=None):
                 maximum_object_size=int(args.max_object_size),
                 columns={"geometry": "JSON", "properties": "JSON"},
             )
+            # Rebind the shared view source to the in-memory chunk
             con.register("osm_json_src", rel)
-            # Bind the shared transform view against the current registered chunk
-            con.execute(transform_sql)
-            if not stage_ready:
-                con.execute("CREATE TABLE stage AS SELECT * FROM places_export LIMIT 0")
-                stage_ready = True
-            spatial_wheres = (" WHERE 1=1 " + args.spatial_filter) if args.spatial_filter else ""
-            affected = con.execute(
-                "INSERT INTO stage SELECT * FROM places_export" + spatial_wheres
-            ).fetchone()[0]
+            affected = con.execute(insert_sql).fetchone()[0]
             total_staged += affected
             elapsed = time.time() - cstart
             print(
                 "[CHUNK %d] %s bytes | %d rows staged | %5.1fs | total rows staged: %d"
-                % (chunk_no, len(chunk), affected, elapsed, total_staged)
+                % (chunk_no, len(chunk), affected, elapsed, total_staged),
+                flush=True,
             )
     finally:
         _, err = proc.communicate()
@@ -268,7 +286,7 @@ def main(argv=None):
         )
 
     total_features = chunk_no
-    if not stage_ready:
+    if total_features == 0:
         raise RuntimeError(
             "No GeoJSON features were received from osmium export; no staging rows. "
             "Aborting without producing an output file (transparent failure policy)."

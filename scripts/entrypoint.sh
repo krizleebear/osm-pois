@@ -227,9 +227,15 @@ monitor_resources() {
             duck_rss="done"
         fi
 
-        if [ -n "$osm_pid" ] && kill -0 "$osm_pid" 2>/dev/null; then
+        # If osm_pid equals duck_pid (Python driver parent), discover osmium child PID
+        local actual_osm_pid="$osm_pid"
+        if [ "$osm_pid" = "$duck_pid" ]; then
+            actual_osm_pid=$(pgrep -P "$duck_pid" osmium 2>/dev/null || pgrep -P "$duck_pid" 2>/dev/null | head -n 1 || true)
+        fi
+
+        if [ -n "$actual_osm_pid" ] && kill -0 "$actual_osm_pid" 2>/dev/null; then
             local raw_osm
-            raw_osm=$(get_rss_kb "$osm_pid")
+            raw_osm=$(get_rss_kb "$actual_osm_pid")
             osm_rss=$(format_mem "$raw_osm")
         elif [ -n "$osm_pid" ]; then
             osm_rss="done"
