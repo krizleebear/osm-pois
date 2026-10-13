@@ -61,7 +61,7 @@ RUN python3 -m pip install --no-cache-dir --break-system-packages \
     cp -r /root/.duckdb /tmp/.duckdb-ext-cache
 
 # 3. Install AI Agent CLIs (opencode & agy)
-RUN curl -fsSL https://opencode.ai/install | bash -s -- --no-modify-path && \
+RUN curl -fsSL https://opencode.ai/v2/install | bash -s -- --no-modify-path && \
     mv /root/.opencode/bin/opencode /usr/local/bin/opencode && \
     chmod 755 /usr/local/bin/opencode && \
     rm -rf /root/.opencode
