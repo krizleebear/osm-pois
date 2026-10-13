@@ -250,31 +250,14 @@ COALESCE(
     FALSE
 );
 
--- Identify named, independently verifiable functional building areas that lack a conventional POI tag.
+-- Identify named functional building areas that lack a conventional POI tag.
 -- Restrict this fallback to explicitly functional building types to avoid admitting generic building footprints.
 CREATE OR REPLACE MACRO is_named_functional_building(props, is_area := FALSE) AS
 COALESCE(
     is_area
     AND props['name'] IS NOT NULL
     AND props['name'] != ''
-    AND list_contains(['office', 'school', 'kindergarten', 'college', 'university', 'hospital', 'civic', 'government', 'fire_station', 'train_station', 'transportation', 'hotel', 'sports_hall', 'stadium', 'retail', 'commercial', 'industrial', 'warehouse'], props['building'])
-    AND (
-        -- For educational and other public/communal buildings, name is sufficient verification
-        props['building'] IN ('school', 'kindergarten', 'college', 'university', 'hospital', 'civic', 'government', 'fire_station', 'train_station', 'transportation')
-        OR props['addr:street'] IS NOT NULL
-        OR props['addr:postcode'] IS NOT NULL
-        OR props['addr:city'] IS NOT NULL
-        OR props['website'] IS NOT NULL
-        OR props['contact:website'] IS NOT NULL
-        OR props['phone'] IS NOT NULL
-        OR props['contact:phone'] IS NOT NULL
-        OR props['email'] IS NOT NULL
-        OR props['contact:email'] IS NOT NULL
-        OR props['operator'] IS NOT NULL
-        OR props['brand'] IS NOT NULL
-        OR props['wikidata'] IS NOT NULL
-        OR props['wikipedia'] IS NOT NULL
-    ),
+    AND list_contains(['office', 'school', 'kindergarten', 'college', 'university', 'hospital', 'civic', 'government', 'fire_station', 'train_station', 'transportation', 'hotel', 'sports_hall', 'stadium', 'retail', 'commercial', 'industrial', 'warehouse'], props['building']),
     FALSE
 );
 
