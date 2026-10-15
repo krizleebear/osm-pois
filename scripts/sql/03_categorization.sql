@@ -8,7 +8,8 @@ CREATE OR REPLACE MACRO resolve_poi_category(
     p_information := NULL, p_name := NULL,
     p_man_made := NULL, p_emergency := NULL,
     p_highway := NULL, p_landuse := NULL,
-    p_sport := NULL, p_building := NULL
+    p_sport := NULL, p_building := NULL,
+    p_natural := NULL
 ) AS
 COALESCE(
     -- 1. Cuisine-specific restaurant match (e.g. amenity=restaurant,cuisine=italian -> italian_restaurant)
@@ -73,6 +74,7 @@ COALESCE(
     getvariable('taxonomy_lookup').primary_map['craft=' || p_craft],
     getvariable('taxonomy_lookup').primary_map['healthcare=' || p_healthcare],
     getvariable('taxonomy_lookup').primary_map['historic=' || p_historic],
+    getvariable('taxonomy_lookup').primary_map['natural=' || p_natural],
     getvariable('taxonomy_lookup').primary_map['railway=' || p_railway],
     getvariable('taxonomy_lookup').primary_map['aeroway=' || p_aeroway],
     getvariable('taxonomy_lookup').primary_map['highway=' || p_highway],
@@ -89,6 +91,7 @@ COALESCE(
     p_man_made,
     p_emergency,
     p_landuse,
+    p_natural,
     'point_of_interest'
 );
 
@@ -97,7 +100,8 @@ CREATE OR REPLACE MACRO resolve_alternate_categories(
     p_main_cat,
     p_amenity, p_shop, p_tourism, p_leisure, p_office,
     p_craft, p_healthcare, p_historic, p_highway,
-    p_cuisine, p_sport, p_landuse := NULL, p_building := NULL
+    p_cuisine, p_sport, p_landuse := NULL, p_building := NULL,
+    p_natural := NULL
 ) AS
 [
   x for x in list_distinct(
@@ -112,6 +116,7 @@ CREATE OR REPLACE MACRO resolve_alternate_categories(
         getvariable('taxonomy_lookup').primary_map['craft=' || p_craft],
         getvariable('taxonomy_lookup').primary_map['healthcare=' || p_healthcare],
         getvariable('taxonomy_lookup').primary_map['historic=' || p_historic],
+        getvariable('taxonomy_lookup').primary_map['natural=' || p_natural],
         getvariable('taxonomy_lookup').primary_map['highway=' || p_highway],
         getvariable('taxonomy_lookup').primary_map['landuse=' || p_landuse],
         CASE WHEN p_building = 'office' THEN 'corporate_or_business_office' END,
@@ -128,6 +133,7 @@ CREATE OR REPLACE MACRO resolve_alternate_categories(
         p_craft,
         p_healthcare,
         p_historic,
+        p_natural,
         p_highway,
         p_landuse
       ],

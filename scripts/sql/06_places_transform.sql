@@ -67,6 +67,7 @@ CREATE OR REPLACE TEMP VIEW places_export AS
             properties['craft'] AS craft,
             properties['healthcare'] AS healthcare,
             properties['historic'] AS historic,
+            properties['natural'] AS natural_feature,
             properties['sport'] AS sport,
             properties['landuse'] AS landuse,
             COALESCE(
@@ -138,7 +139,8 @@ CREATE OR REPLACE TEMP VIEW places_export AS
                 f.information, f.name,
                 f.man_made, f.emergency,
                 f.highway, f.landuse,
-                f.sport, f.building
+                f.sport, f.building,
+                f.natural_feature
             ) AS main_category
         FROM raw_features f
     ),
@@ -149,7 +151,8 @@ CREATE OR REPLACE TEMP VIEW places_export AS
                 c.main_category,
                 c.amenity, c.shop, c.tourism, c.leisure, c.office,
                 c.craft, c.healthcare, c.historic, c.highway,
-                c.cuisine, c.sport, c.landuse, c.building
+                c.cuisine, c.sport, c.landuse, c.building,
+                c.natural_feature
             ) AS alternate_categories
         FROM categorized c
     ),

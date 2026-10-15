@@ -531,6 +531,7 @@ zoo;tourism=zoo
 petting_zoo;tourism=zoo,zoo=petting_zoo
 art_gallery;tourism=gallery
 sculpture_statue;historic=memorial,memorial=statue
+sculpture_statue;historic=memorial
 street_art;tourism=artwork,artwork_type=mural
 auditorium;
 arcade;leisure=amusement_arcade
@@ -947,6 +948,13 @@ hot_springs;natural=hot_spring
 lake;natural=water,water=lake
 river;waterway=river
 waterfall;waterway=waterfall
+waterfall;natural=waterfall
+water_feature;natural=water
+water_feature;natural=spring
+water_feature;natural=bay
+land_feature;natural=cliff
+land_feature;natural=cape
+land_feature;natural=peninsula
 doctors_office;amenity=doctors
 emergency_or_urgent_care_facility;amenity=hospital,healthcare:speciality=emergency
 hospital;healthcare=doctor,healthcare:speciality=internal_medicine

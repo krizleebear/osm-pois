@@ -120,7 +120,8 @@ CREATE TEMP TABLE test_cases (
     emergency VARCHAR DEFAULT NULL,
     highway VARCHAR DEFAULT NULL,
     landuse VARCHAR DEFAULT NULL,
-    building VARCHAR DEFAULT NULL
+    building VARCHAR DEFAULT NULL,
+    "natural" VARCHAR DEFAULT NULL
 );
 
 INSERT INTO test_cases (test_id, expected_category, amenity) VALUES
@@ -307,6 +308,22 @@ INSERT INTO test_cases (test_id, expected_category, building) VALUES
     ('TC103-Building-School', 'school', 'school'),
     ('TC104-Building-Warehouse-Fallback', 'point_of_interest', 'warehouse');
 
+INSERT INTO test_cases (test_id, expected_category, "natural") VALUES
+    ('TC105-Natural-Peak', 'mountain', 'peak'),
+    ('TC106-Natural-Cave', 'cave', 'cave_entrance'),
+    ('TC107-Natural-Beach', 'beach', 'beach'),
+    ('TC108-Natural-Water', 'water_feature', 'water'),
+    ('TC109-Natural-Spring', 'water_feature', 'spring'),
+    ('TC110-Natural-Waterfall', 'waterfall', 'waterfall'),
+    ('TC111-Natural-Cliff', 'land_feature', 'cliff');
+
+INSERT INTO test_cases (test_id, expected_category, historic) VALUES
+    ('TC112-Historic-Monument', 'monument', 'monument'),
+    ('TC113-Historic-Memorial', 'sculpture_statue', 'memorial'),
+    ('TC114-Historic-Castle', 'castle', 'castle'),
+    ('TC115-Historic-Ruins', 'ruin', 'ruins'),
+    ('TC116-Historic-Archaeological', 'historic_site', 'archaeological_site');
+
 -- Evaluate categories using the production resolve_poi_category macro
 CREATE TEMP TABLE evaluated AS
 SELECT 
@@ -319,7 +336,8 @@ SELECT
         t.information, t.name,
         t.man_made, t.emergency,
         t.highway, t.landuse,
-        t.sport, t.building
+        t.sport, t.building,
+        t."natural"
     ) AS actual_category
 FROM test_cases t;
 
@@ -588,6 +606,44 @@ SELECT
         ELSE error('DEDUPLICATION TEST FAILED: unexpected features retained ' || CAST(list(id) AS VARCHAR))
     END AS dedup_check
 FROM mock_dedup_result;
+
+-- Check 3.2f: Catch-all named natural features & noise filter blacklist
+CREATE TEMP TABLE mock_natural_noise_input AS
+SELECT 401 AS id, tags_of('{"natural":"peak","name":"Grossglockner","ele":"3798"}') AS props, TRUE AS should_pass -- Named peak
+UNION ALL
+SELECT 402 AS id, tags_of('{"natural":"cave_entrance","name":"Eisriesenwelt"}') AS props, TRUE AS should_pass -- Named cave
+UNION ALL
+SELECT 403 AS id, tags_of('{"natural":"water","name":"Chiemsee"}') AS props, TRUE AS should_pass -- Named lake/water
+UNION ALL
+SELECT 404 AS id, tags_of('{"historic":"monument","name":"Hermannsdenkmal"}') AS props, TRUE AS should_pass -- Named monument
+UNION ALL
+SELECT 405 AS id, tags_of('{"natural":"peak","ele":"2100"}') AS props, FALSE AS should_pass -- Unnamed peak (noise filter)
+UNION ALL
+SELECT 406 AS id, tags_of('{"natural":"water"}') AS props, FALSE AS should_pass -- Unnamed water (noise filter)
+UNION ALL
+SELECT 407 AS id, tags_of('{"amenity":"vending_machine","name":"Zigaretten"}') AS props, FALSE AS should_pass -- Vending machine (noise blacklist)
+UNION ALL
+SELECT 408 AS id, tags_of('{"barrier":"fence","name":"Zaun"}') AS props, FALSE AS should_pass -- Fence (noise blacklist)
+UNION ALL
+SELECT 409 AS id, tags_of('{"power":"pole","name":"Strommast 14"}') AS props, FALSE AS should_pass -- Power pole (noise blacklist)
+UNION ALL
+SELECT 410 AS id, tags_of('{"highway":"street_lamp","name":"Laterne"}') AS props, FALSE AS should_pass; -- Street lamp (noise blacklist)
+
+CREATE TEMP TABLE mock_natural_noise_evaluated AS
+SELECT 
+    id,
+    should_pass,
+    is_poi_candidate(props) AS actual_candidate
+FROM mock_natural_noise_input;
+
+SELECT 
+    CASE 
+        WHEN count(*) = 0 
+        THEN '[OK] Catch-all natural features and noise blacklist check passed: named peaks, caves, water admitted; unnamed natural & micro-infrastructure blacklisted'
+        ELSE error('NATURAL/NOISE FILTER FAILED: mismatches found: ' || count(*))
+    END AS natural_noise_filter_check
+FROM mock_natural_noise_evaluated
+WHERE should_pass != actual_candidate;
 
 -- Check 3.3: Schema type definitions check via empty_rules macro
 CREATE TEMP TABLE schema_type_check AS

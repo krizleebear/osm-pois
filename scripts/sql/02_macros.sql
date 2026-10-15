@@ -76,7 +76,7 @@ END;
 
 -- Identify micro-infrastructure tags (street furniture) that should not be extracted as standalone POIs
 CREATE OR REPLACE MACRO is_micro_infrastructure(amenity) AS
-list_contains(['bench', 'waste_basket', 'shelter', 'grit_bin', 'hunting_stand', 'feeding_place', 'waste_disposal', 'ticket_validator'], amenity);
+list_contains(['bench', 'waste_basket', 'shelter', 'grit_bin', 'hunting_stand', 'feeding_place', 'waste_disposal', 'ticket_validator', 'vending_machine'], amenity);
 
 -- Identify outdoor information micro-infrastructure tags (boards, signposts, maps) that should not be standalone POIs
 CREATE OR REPLACE MACRO is_info_micro_infrastructure(tourism, info) AS
@@ -302,6 +302,16 @@ COALESCE(
                 props['man_made'] IS NOT NULL 
                 AND NOT is_micro_man_made(props['man_made'])
                 AND (props['name'] IS NOT NULL OR props['brand'] IS NOT NULL)
+            )
+            OR (
+                props['natural'] IS NOT NULL
+                AND list_contains([
+                    'peak', 'volcano', 'water', 'spring', 'hot_spring', 'geyser',
+                    'cave_entrance', 'beach', 'cliff', 'bay', 'cape', 'peninsula',
+                    'valley', 'gorge', 'glacier', 'waterfall', 'rock', 'stone', 'bare_rock',
+                    'sinkhole', 'dune', 'desert', 'wood', 'tree'
+                ], props['natural'])
+                AND props['name'] IS NOT NULL
             )
         )
         AND (
