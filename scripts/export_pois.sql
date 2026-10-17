@@ -69,8 +69,14 @@ tag_split AS (
         relation_id,
         raw_members,
         regexp_extract(raw_tags, '(^|,)type=([^,]*)', 2) AS relation_type,
-        regexp_extract(raw_tags, '(^|,)site=([^,]*)', 2) AS site_type,
-        regexp_extract(raw_tags, '(^|,)name=([^,]*)', 2) AS rel_name
+        regexp_extract(raw_tags, '(^|,)site=([^,]*)', 2) AS site_type
+        -- NOTE ON RELATION NAMES:
+        -- Relation names are intentionally not extracted here because POIs derive their
+        -- canonical and localized names from the primary GeoJSON feature stream.
+        -- If parent relation names are ever needed downstream in the future, note that
+        -- Osmium OPL encodes characters as hexadecimal Unicode code points (%HEX%, e.g. %20% space,
+        -- %30ed% Japanese, %122b% Amharic), NOT URL-encoded UTF-8 bytes. Do not extract names via
+        -- raw SQL regex; pre-index them through unquote_opl() into typed JSONL (see osm-addresses).
     FROM parsed_rels
 ),
 members_expanded AS (
@@ -78,7 +84,6 @@ members_expanded AS (
         relation_id,
         relation_type,
         site_type,
-        rel_name,
         unnest(string_split(raw_members, ',')) AS member_str
     FROM tag_split
     WHERE raw_members != ''
@@ -88,12 +93,11 @@ member_parsed AS (
         relation_id,
         relation_type,
         site_type,
-        rel_name,
         'osm:' || CASE WHEN substring(member_str, 1, 1) = 'n' THEN 'node'
                        WHEN substring(member_str, 1, 1) = 'w' THEN 'way'
                        ELSE 'relation' END
                || '/' || regexp_extract(member_str, '^[nwr]([0-9]+)', 1) AS member_id,
-        split_part(member_str, '@', 2) AS member_role
+        replace(replace(NULLIF(split_part(member_str, '@', 2), ''), '%20%', ' '), '%20', ' ') AS member_role
     FROM members_expanded
     WHERE member_str != ''
 ),
