@@ -122,7 +122,11 @@ When modifying or generating code in this repository, you **MUST** follow these 
 15. **Single-Pass Properties Parsing (Taiwan OOM Invariant)**:
     * The GeoJSON `properties` column is always read as `MAP(VARCHAR, VARCHAR)`, never as `JSON`, and the declaration must be identical in the FIFO view of `scripts/export_pois.sql` and in both `read_json` calls of `scripts/entrypoint.py` (the transform view is bound once against `osm_json_src`, so bootstrap and per-chunk schemas must match).
     * Every tag access must be a map lookup (`props['amenity']`, `map_keys(props)`, `map_entries(props)`). Calling `json_extract_*` / `json_keys` on `properties` is strictly forbidden: each call re-parses the whole JSON document, which makes per-row cost quadratic in tag count and reproduced the Taiwan OOM (`failed to allocate data of size 16.0 MiB (4.4 GiB/4.4 GiB used)` before `[CHUNK 1]` was ever logged).
-    * Lookup semantics must remain identical to `json_extract_string` (missing key → `NULL`, JSON numbers/booleans → `VARCHAR`, JSON `null` → `NULL`, nested object → its JSON text; keys may contain `:`, `"` and CJK). Pinned by `tests/test_unit.sql` (Check 4.5 parity assertions) and by the peak-RSS budget assertion in `tests/test_memory_budget.sh`, which fails loudly on the legacy JSON reader.
+16. **DuckDB Bounded ST_Hilbert Spatial Sorting & Row Group Pruning Invariant**:
+    * All final Parquet export queries (`scripts/export_pois.sql`, `scripts/entrypoint.py`, and `scripts/entrypoint.sh`) MUST sort records using bounded Hilbert indexing:
+      `ORDER BY ST_Hilbert(geometry, ST_Extent(ST_Extent_Agg(geometry) OVER ()))`
+    * **Never call unbounded `ST_Hilbert(geometry)`**: DuckDB defaults to the full float range (-3.4e38 to +3.4e38) when bounds are omitted, destroying spatial locality in geographic coordinate space and resulting in 0% Row-Group pruning downstream.
+    * **Row Group Sizing**: Retain `ROW_GROUP_SIZE 60000` in all Parquet COPY statements for optimal Overture Places batching and compression.
 
 ---
 

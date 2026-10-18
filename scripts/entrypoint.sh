@@ -89,7 +89,7 @@ if [ "$COUNTRY_CODE" = "US" ] && [ -z "$SPATIAL_FILTER" ]; then
             '$SPLIT_DIR/us_central.places.parquet',
             '$SPLIT_DIR/us_east.places.parquet'
         ])
-        ORDER BY ST_Hilbert(geometry)
+        ORDER BY ST_Hilbert(geometry, ST_Extent(ST_Extent_Agg(geometry) OVER ()))
     ) TO '$OUTPUT_PARQUET' (
         FORMAT PARQUET,
         COMPRESSION 'ZSTD',

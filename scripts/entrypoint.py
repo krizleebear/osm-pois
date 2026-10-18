@@ -333,7 +333,7 @@ def main(argv=None):
     # 4. Single final GeoParquet with the full provenance KV_METADATA
     # ------------------------------------------------------------------
     copy_sql = (
-        "COPY (SELECT * FROM stage ORDER BY ST_Hilbert(geometry)) TO '%s' (\n"
+        "COPY (SELECT * FROM stage ORDER BY ST_Hilbert(geometry, ST_Extent(ST_Extent_Agg(geometry) OVER ()))) TO '%s' (\n"
         "    FORMAT PARQUET,\n"
         "    COMPRESSION 'ZSTD',\n"
         "    ROW_GROUP_SIZE 60000,\n"
