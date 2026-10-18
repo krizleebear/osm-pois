@@ -80,6 +80,7 @@ if [ "$COUNTRY_CODE" = "US" ] && [ -z "$SPATIAL_FILTER" ]; then
     EXPORT_TIMESTAMP="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
 
     duckdb -dark-mode -no-stdin -c "
+    LOAD spatial;
     SET preserve_insertion_order = false;
     SET threads = 2;
     SET max_memory = '2000MB';
