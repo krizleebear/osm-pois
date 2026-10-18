@@ -198,7 +198,7 @@ SET VARIABLE country_code = '__COUNTRY_CODE__';
 -- The places_export transform view (single source of truth) is defined in:
 .read __REPO_ROOT__/scripts/sql/06_places_transform.sql
 
-COPY (SELECT * FROM places_export WHERE 1=1 __SPATIAL_FILTER__) TO '__OUTPUT_PARQUET__' (
+COPY (SELECT * FROM places_export WHERE 1=1 __SPATIAL_FILTER__ ORDER BY ST_Hilbert(geometry)) TO '__OUTPUT_PARQUET__' (
 
     FORMAT PARQUET, 
     COMPRESSION 'ZSTD',
