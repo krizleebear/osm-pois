@@ -140,7 +140,8 @@ SELECT
     count(CASE WHEN access_type = 'parking' THEN 1 END),
     count(CASE WHEN typeof(operating_status) = 'VARCHAR' AND operating_status IN ('active', 'temporarily_unavailable') THEN 1 END),
     count(CASE WHEN typeof(lifecycle_state) = 'VARCHAR' THEN 1 END),
-    count(CASE WHEN typeof(navigation_relevant) = 'BOOLEAN' THEN 1 END)
+    count(CASE WHEN typeof(navigation_relevant) = 'BOOLEAN' THEN 1 END),
+    count(CASE WHEN typeof(ele) = 'VARCHAR' THEN 1 END)
 FROM '$OUTPUT_PARQUET';
 ")
 
@@ -223,8 +224,13 @@ fi
 
 # Superset Operational Attributes Schema Assertions
 VALID_OP_STATUS_COUNT=$(echo "$SCHEMA_CHECK" | cut -d',' -f41)
+VALID_ELE_TYPE=$(echo "$SCHEMA_CHECK" | cut -d',' -f44)
 if [ "$VALID_OP_STATUS_COUNT" -ne "$TOTAL_COUNT" ]; then
     echo "[FAIL] Expected all POIs to have valid operating_status ('active' or 'temporarily_unavailable'), got $VALID_OP_STATUS_COUNT / $TOTAL_COUNT"
+    exit 1
+fi
+if [ "$VALID_ELE_TYPE" -ne "$TOTAL_COUNT" ]; then
+    echo "[FAIL] Expected ele column to be typed as VARCHAR, got $VALID_ELE_TYPE / $TOTAL_COUNT"
     exit 1
 fi
 if [ "$VALID_HOURS_TYPE" -ne "$TOTAL_COUNT" ] || [ "$VALID_WHEEL_TYPE" -ne "$TOTAL_COUNT" ] || [ "$VALID_PAY_TYPE" -ne "$TOTAL_COUNT" ] || [ "$VALID_LEVEL_TYPE" -ne "$TOTAL_COUNT" ] || [ "$VALID_DELIV_TYPE" -ne "$TOTAL_COUNT" ] || [ "$VALID_TAKE_TYPE" -ne "$TOTAL_COUNT" ] || [ "$VALID_REF_TYPE" -ne "$TOTAL_COUNT" ]; then

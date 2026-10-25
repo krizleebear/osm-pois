@@ -121,7 +121,9 @@ CREATE TEMP TABLE test_cases (
     highway VARCHAR DEFAULT NULL,
     landuse VARCHAR DEFAULT NULL,
     building VARCHAR DEFAULT NULL,
-    "natural" VARCHAR DEFAULT NULL
+    "natural" VARCHAR DEFAULT NULL,
+    company VARCHAR DEFAULT NULL,
+    is_corroborated BOOLEAN DEFAULT FALSE
 );
 
 INSERT INTO test_cases (test_id, expected_category, amenity) VALUES
@@ -324,6 +326,19 @@ INSERT INTO test_cases (test_id, expected_category, historic) VALUES
     ('TC115-Historic-Ruins', 'ruin', 'ruins'),
     ('TC116-Historic-Archaeological', 'historic_site', 'archaeological_site');
 
+INSERT INTO test_cases (test_id, expected_category, company) VALUES
+    ('TC117-Company-SoftwareDev', 'information_technology_company', 'software_development'),
+    ('TC118-Company-IT', 'information_technology_company', 'it'),
+    ('TC119-Company-Software', 'information_technology_company', 'software'),
+    ('TC120-Company-Consulting', 'corporate_or_business_office', 'consulting'),
+    ('TC121-Company-Logistics', 'corporate_or_business_office', 'logistics');
+
+INSERT INTO test_cases (test_id, expected_category, "natural") VALUES
+    ('TC122-Natural-Rock', 'geologic_formation', 'rock');
+
+INSERT INTO test_cases (test_id, expected_category, name, is_corroborated) VALUES
+    ('TC123-Corroborated-Fallback', 'corporate_or_business_office', 'Acme Corp', TRUE);
+
 -- Evaluate categories using the production resolve_poi_category macro
 CREATE TEMP TABLE evaluated AS
 SELECT 
@@ -337,7 +352,9 @@ SELECT
         t.man_made, t.emergency,
         t.highway, t.landuse,
         t.sport, t.building,
-        t."natural"
+        t."natural",
+        t.company,
+        t.is_corroborated
     ) AS actual_category
 FROM test_cases t;
 
@@ -627,7 +644,29 @@ SELECT 408 AS id, tags_of('{"barrier":"fence","name":"Zaun"}') AS props, FALSE A
 UNION ALL
 SELECT 409 AS id, tags_of('{"power":"pole","name":"Strommast 14"}') AS props, FALSE AS should_pass -- Power pole (noise blacklist)
 UNION ALL
-SELECT 410 AS id, tags_of('{"highway":"street_lamp","name":"Laterne"}') AS props, FALSE AS should_pass; -- Street lamp (noise blacklist)
+SELECT 410 AS id, tags_of('{"highway":"street_lamp","name":"Laterne"}') AS props, FALSE AS should_pass -- Street lamp (noise blacklist)
+UNION ALL
+SELECT 411 AS id, tags_of('{"natural":"rock","name":"Loreley"}') AS props, TRUE AS should_pass -- Named rock
+UNION ALL
+SELECT 412 AS id, tags_of('{"natural":"spring","name":"Donauquelle"}') AS props, TRUE AS should_pass -- Named spring
+UNION ALL
+SELECT 413 AS id, tags_of('{"historic":"memorial","name":"Kriegerdenkmal"}') AS props, TRUE AS should_pass -- Named memorial
+UNION ALL
+SELECT 414 AS id, tags_of('{"historic":"ruins","name":"Burgruine Wolfstein"}') AS props, TRUE AS should_pass -- Named ruins
+UNION ALL
+SELECT 415 AS id, tags_of('{"historic":"archaeological_site","name":"Keltenwall"}') AS props, TRUE AS should_pass -- Named archaeological site
+UNION ALL
+SELECT 416 AS id, tags_of('{"natural":"rock"}') AS props, FALSE AS should_pass -- Unnamed rock
+UNION ALL
+SELECT 417 AS id, tags_of('{"natural":"spring"}') AS props, FALSE AS should_pass -- Unnamed spring
+UNION ALL
+SELECT 418 AS id, tags_of('{"historic":"monument"}') AS props, FALSE AS should_pass -- Unnamed monument
+UNION ALL
+SELECT 419 AS id, tags_of('{"historic":"memorial"}') AS props, FALSE AS should_pass -- Unnamed memorial
+UNION ALL
+SELECT 420 AS id, tags_of('{"historic":"ruins"}') AS props, FALSE AS should_pass -- Unnamed ruins
+UNION ALL
+SELECT 421 AS id, tags_of('{"historic":"archaeological_site"}') AS props, FALSE AS should_pass; -- Unnamed archaeological site
 
 CREATE TEMP TABLE mock_natural_noise_evaluated AS
 SELECT 
@@ -644,6 +683,91 @@ SELECT
     END AS natural_noise_filter_check
 FROM mock_natural_noise_evaluated
 WHERE should_pass != actual_candidate;
+
+-- Check 3.2g: Company tagging, Corroborator-fallback heuristic & Peak elevation preservation
+CREATE TEMP TABLE mock_company_corroborator_input AS
+-- Requirement 1: company=* tagging as office
+SELECT 501 AS id, tags_of('{"@type":"node","@id":"14263460852","name":"e.solutions GmbH","company":"software_development","website":"https://www.esolutions.de"}') AS props, TRUE AS should_pass, 'information_technology_company' AS expected_cat
+UNION ALL
+SELECT 502 AS id, tags_of('{"@type":"node","company":"software_development"}') AS props, FALSE AS should_pass, CAST(NULL AS VARCHAR) AS expected_cat -- Unnamed company (noise)
+UNION ALL
+SELECT 503 AS id, tags_of('{"@type":"node","name":"Beratung & Partner GmbH","company":"consulting"}') AS props, TRUE AS should_pass, 'corporate_or_business_office' AS expected_cat -- Generic company
+UNION ALL
+SELECT 504 AS id, tags_of('{"@type":"node","name":"Tech Solutions","company":"it"}') AS props, TRUE AS should_pass, 'information_technology_company' AS expected_cat -- company=it
+-- Requirement 2: Corroborator-fallback for incompletely tagged POIs
+UNION ALL
+SELECT 505 AS id, tags_of('{"@type":"node","name":"Musterfirma","website":"https://muster.de"}') AS props, TRUE AS should_pass, 'corporate_or_business_office' AS expected_cat -- Name + website
+UNION ALL
+SELECT 506 AS id, tags_of('{"@type":"node","name":"Musterfirma","contact:website":"https://muster.de"}') AS props, TRUE AS should_pass, 'corporate_or_business_office' AS expected_cat -- Name + contact:website
+UNION ALL
+SELECT 507 AS id, tags_of('{"@type":"node","name":"Musterfirma","phone":"+49 89 123456"}') AS props, TRUE AS should_pass, 'corporate_or_business_office' AS expected_cat -- Name + phone
+UNION ALL
+SELECT 508 AS id, tags_of('{"@type":"node","name":"Musterfirma","contact:phone":"+49 89 123456"}') AS props, TRUE AS should_pass, 'corporate_or_business_office' AS expected_cat -- Name + contact:phone
+UNION ALL
+SELECT 509 AS id, tags_of('{"@type":"node","name":"Musterfirma","email":"info@muster.de"}') AS props, TRUE AS should_pass, 'corporate_or_business_office' AS expected_cat -- Name + email
+UNION ALL
+SELECT 510 AS id, tags_of('{"@type":"node","name":"Musterfirma","contact:email":"info@muster.de"}') AS props, TRUE AS should_pass, 'corporate_or_business_office' AS expected_cat -- Name + contact:email
+UNION ALL
+SELECT 511 AS id, tags_of('{"@type":"node","name":"Entity Without Type Tag","wikidata":"Q12345678"}') AS props, TRUE AS should_pass, 'corporate_or_business_office' AS expected_cat -- Name + wikidata
+UNION ALL
+SELECT 512 AS id, tags_of('{"@type":"node","name":"Privates Gartentor"}') AS props, FALSE AS should_pass, CAST(NULL AS VARCHAR) AS expected_cat -- Private gate without corroboration
+UNION ALL
+SELECT 513 AS id, tags_of('{"@type":"node","name":"Gartenschuppen"}') AS props, FALSE AS should_pass, CAST(NULL AS VARCHAR) AS expected_cat -- Private shed without corroboration
+UNION ALL
+SELECT 514 AS id, tags_of('{"@type":"node","name":"Baustellenzufahrt Tor 2"}') AS props, FALSE AS should_pass, CAST(NULL AS VARCHAR) AS expected_cat -- Construction note without corroboration
+UNION ALL
+SELECT 515 AS id, tags_of('{"@type":"node","amenity":"bench","name":"Gedenkbank","website":"https://bench.org"}') AS props, FALSE AS should_pass, CAST(NULL AS VARCHAR) AS expected_cat -- Micro-infra bench rejected even with website
+UNION ALL
+SELECT 516 AS id, tags_of('{"@type":"node","tourism":"information","information":"board","name":"Wandertafel","website":"https://wanderkarte.de"}') AS props, FALSE AS should_pass, CAST(NULL AS VARCHAR) AS expected_cat; -- Micro-infra info board rejected even with website
+
+CREATE TEMP TABLE mock_company_corroborator_evaluated AS
+SELECT 
+    id,
+    should_pass,
+    is_poi_candidate(props) AS actual_candidate,
+    CASE 
+        WHEN is_poi_candidate(props) THEN
+            resolve_poi_category(
+                props['amenity'], props['shop'], props['tourism'], props['leisure'], props['office'],
+                props['craft'], props['healthcare'], props['historic'], props['railway'], props['aeroway'],
+                props['cuisine'], props['station'], props['religion'], props['denomination'],
+                props['information'], props['name'],
+                props['man_made'], props['emergency'],
+                props['highway'], props['landuse'],
+                props['sport'], props['building'],
+                props['natural'],
+                props['company'],
+                has_poi_corroboration(props)
+            )
+        ELSE NULL
+    END AS actual_cat,
+    expected_cat
+FROM mock_company_corroborator_input;
+
+SELECT 
+    CASE 
+        WHEN count(*) = 0 
+        THEN '[OK] Company tagging and corroborator-fallback check passed: e.solutions node/14263460852, IT/generic company, and verified contact fallbacks admitted; private gates/sheds/notes and micro-infrastructure excluded'
+        ELSE error('COMPANY/CORROBORATOR FILTER FAILED: mismatches found: ' || count(*))
+    END AS company_corroborator_check
+FROM mock_company_corroborator_evaluated
+WHERE should_pass != actual_candidate OR (should_pass AND expected_cat != actual_cat);
+
+-- Check 3.2h: Peak elevation (ele) tag preservation
+CREATE TEMP TABLE mock_peak_ele AS
+SELECT 
+    props['name'] AS peak_name,
+    props['ele'] AS raw_ele,
+    osm_raw_tags(props)['ele'] AS preserved_ele
+FROM (SELECT tags_of('{"natural":"peak","name":"Grossglockner","ele":"3798"}') AS props);
+
+SELECT 
+    CASE 
+        WHEN preserved_ele = '3798' 
+        THEN '[OK] Peak elevation (ele) tag preservation passed: Grossglockner ele=3798 preserved in raw tags MAP'
+        ELSE error('PEAK ELEVATION CHECK FAILED: ele was not preserved in raw tags MAP!')
+    END AS peak_ele_check
+FROM mock_peak_ele;
 
 -- Check 3.3: Schema type definitions check via empty_rules macro
 CREATE TEMP TABLE schema_type_check AS

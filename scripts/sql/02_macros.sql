@@ -261,6 +261,19 @@ COALESCE(
     FALSE
 );
 
+-- Identify features that have a valid name and at least one verifying contact or web tag (corroborator fallback)
+CREATE OR REPLACE MACRO has_poi_corroboration(props) AS
+(props['name'] IS NOT NULL AND trim(props['name']) != '')
+AND (
+    (props['website'] IS NOT NULL AND trim(props['website']) != '')
+    OR (props['contact:website'] IS NOT NULL AND trim(props['contact:website']) != '')
+    OR (props['phone'] IS NOT NULL AND trim(props['phone']) != '')
+    OR (props['contact:phone'] IS NOT NULL AND trim(props['contact:phone']) != '')
+    OR (props['email'] IS NOT NULL AND trim(props['email']) != '')
+    OR (props['contact:email'] IS NOT NULL AND trim(props['contact:email']) != '')
+    OR (props['wikidata'] IS NOT NULL AND trim(props['wikidata']) != '')
+);
+
 -- Primary filter: determines whether an OSM feature qualifies as a POI candidate
 CREATE OR REPLACE MACRO is_poi_candidate(props, is_area := FALSE) AS
 COALESCE(
@@ -293,7 +306,10 @@ COALESCE(
             OR props['office'] IS NOT NULL 
             OR props['craft'] IS NOT NULL 
             OR props['healthcare'] IS NOT NULL 
-            OR props['historic'] IS NOT NULL 
+            OR (
+                props['historic'] IS NOT NULL 
+                AND (props['name'] IS NOT NULL OR props['brand'] IS NOT NULL)
+            )
             OR props['railway'] IS NOT NULL 
             OR props['aeroway'] IS NOT NULL
             OR props['highway'] IN ('rest_area', 'services')
@@ -313,6 +329,17 @@ COALESCE(
                 ], props['natural'])
                 AND props['name'] IS NOT NULL
             )
+            OR (
+                props['company'] IS NOT NULL
+                AND (props['name'] IS NOT NULL OR props['brand'] IS NOT NULL)
+            )
+            OR (
+                has_poi_corroboration(props)
+                AND (props['building'] IS NULL OR is_area)
+                AND props['barrier'] IS NULL
+                AND props['power'] IS NULL
+                AND props['highway'] IS NULL
+            )
         )
         AND (
             props['amenity'] IS NULL 
@@ -321,6 +348,7 @@ COALESCE(
             OR (props['tourism'] IS NOT NULL AND props['tourism'] != 'information')
             OR props['historic'] IS NOT NULL
             OR props['office'] IS NOT NULL
+            OR props['company'] IS NOT NULL
             OR props['craft'] IS NOT NULL
             OR props['healthcare'] IS NOT NULL
         )
@@ -329,10 +357,15 @@ COALESCE(
             OR props['shop'] IS NOT NULL
             OR props['historic'] IS NOT NULL
             OR props['office'] IS NOT NULL
+            OR props['company'] IS NOT NULL
             OR props['craft'] IS NOT NULL
             OR props['healthcare'] IS NOT NULL
             OR (props['amenity'] IS NOT NULL AND NOT is_micro_infrastructure(props['amenity']))
             OR props['leisure'] IS NOT NULL
+        )
+        AND (
+            props['man_made'] IS NULL
+            OR NOT is_micro_man_made(props['man_made'])
         )
     ),
     FALSE

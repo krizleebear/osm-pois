@@ -937,6 +937,8 @@ crater;natural=volcano
 desert;natural=desert
 forest;natural=wood
 geologic_formation;geological=outcrop
+geologic_formation;natural=rock
+geologic_formation;natural=bare_rock
 island;place=island
 mountain;natural=peak
 nature_reserve;leisure=nature_reserve
@@ -1387,6 +1389,7 @@ stone_and_masonry;craft=stonemason
 b2b_service;office=yes
 environmental_or_ecological_service;
 corporate_or_business_office;office=company
+corporate_or_business_office;company=yes
 auto_company;
 bags_luggage_company;shop=bag
 biotechnology_company;
@@ -1396,6 +1399,8 @@ energy_company;office=energy_supplier
 ferry_boat_company;office=transportation,transport=ferry
 industrial_company;office=industrial
 information_technology_company;office=it
+information_technology_company;company=software_development
+information_technology_company;company=it
 pharmaceutical_company;office=company,industry=pharmaceutical
 private_association;
 telecommunications_company;office=telecommunication

@@ -9,7 +9,9 @@ CREATE OR REPLACE MACRO resolve_poi_category(
     p_man_made := NULL, p_emergency := NULL,
     p_highway := NULL, p_landuse := NULL,
     p_sport := NULL, p_building := NULL,
-    p_natural := NULL
+    p_natural := NULL,
+    p_company := NULL,
+    p_is_corroborated := FALSE
 ) AS
 COALESCE(
     -- 1. Cuisine-specific restaurant match (e.g. amenity=restaurant,cuisine=italian -> italian_restaurant)
@@ -71,6 +73,11 @@ COALESCE(
     END,
     getvariable('taxonomy_lookup').primary_map['leisure=' || p_leisure],
     getvariable('taxonomy_lookup').primary_map['office=' || p_office],
+    getvariable('taxonomy_lookup').primary_map['company=' || p_company],
+    CASE 
+        WHEN p_company IN ('software_development', 'it', 'software', 'technology', 'tech', 'web_development', 'computer') THEN 'information_technology_company'
+        WHEN p_company IS NOT NULL THEN 'corporate_or_business_office'
+    END,
     getvariable('taxonomy_lookup').primary_map['craft=' || p_craft],
     getvariable('taxonomy_lookup').primary_map['healthcare=' || p_healthcare],
     getvariable('taxonomy_lookup').primary_map['historic=' || p_historic],
@@ -81,6 +88,8 @@ COALESCE(
     getvariable('taxonomy_lookup').primary_map['man_made=' || p_man_made],
     getvariable('taxonomy_lookup').primary_map['emergency=' || p_emergency],
     getvariable('taxonomy_lookup').primary_map['landuse=' || p_landuse],
+    -- Corroborated POI fallback without standard tags
+    CASE WHEN p_is_corroborated THEN 'corporate_or_business_office' END,
     CASE WHEN p_building = 'office' THEN 'corporate_or_business_office' END,
     CASE WHEN p_building = 'school' THEN 'school' END,
     p_amenity,
@@ -101,7 +110,7 @@ CREATE OR REPLACE MACRO resolve_alternate_categories(
     p_amenity, p_shop, p_tourism, p_leisure, p_office,
     p_craft, p_healthcare, p_historic, p_highway,
     p_cuisine, p_sport, p_landuse := NULL, p_building := NULL,
-    p_natural := NULL
+    p_natural := NULL, p_company := NULL
 ) AS
 [
   x for x in list_distinct(
@@ -113,6 +122,11 @@ CREATE OR REPLACE MACRO resolve_alternate_categories(
         getvariable('taxonomy_lookup').primary_map['tourism=' || p_tourism],
         getvariable('taxonomy_lookup').primary_map['leisure=' || p_leisure],
         getvariable('taxonomy_lookup').primary_map['office=' || p_office],
+        getvariable('taxonomy_lookup').primary_map['company=' || p_company],
+        CASE 
+            WHEN p_company IN ('software_development', 'it', 'software', 'technology', 'tech', 'web_development', 'computer') THEN 'information_technology_company'
+            WHEN p_company IS NOT NULL THEN 'corporate_or_business_office'
+        END,
         getvariable('taxonomy_lookup').primary_map['craft=' || p_craft],
         getvariable('taxonomy_lookup').primary_map['healthcare=' || p_healthcare],
         getvariable('taxonomy_lookup').primary_map['historic=' || p_historic],

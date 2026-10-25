@@ -62,7 +62,28 @@ CREATE OR REPLACE TEMP VIEW places_export AS
                 properties['disused:leisure'],
                 properties['construction:leisure']
             ) AS leisure,
-            properties['office'] AS office,
+            COALESCE(
+                properties['office'],
+                CASE 
+                    WHEN properties['company'] IN ('software_development', 'it', 'software', 'technology', 'tech', 'web_development', 'computer') THEN 'it'
+                    WHEN properties['company'] IS NOT NULL THEN 'company'
+                    WHEN has_poi_corroboration(properties)
+                         AND properties['amenity'] IS NULL 
+                         AND properties['shop'] IS NULL 
+                         AND properties['tourism'] IS NULL 
+                         AND properties['leisure'] IS NULL 
+                         AND properties['craft'] IS NULL 
+                         AND properties['healthcare'] IS NULL 
+                         AND properties['historic'] IS NULL 
+                         AND properties['natural'] IS NULL 
+                         AND properties['railway'] IS NULL 
+                         AND properties['aeroway'] IS NULL 
+                         AND properties['man_made'] IS NULL
+                    THEN 'company'
+                    ELSE NULL
+                END
+            ) AS office,
+            properties['company'] AS company,
             properties['building'] AS building,
             properties['craft'] AS craft,
             properties['healthcare'] AS healthcare,
@@ -88,6 +109,8 @@ CREATE OR REPLACE TEMP VIEW places_export AS
             properties['ref'] AS ref,
             properties['brand'] AS brand,
             properties['brand:wikidata'] AS brand_wikidata,
+            properties['ele'] AS ele,
+            has_poi_corroboration(properties) AS is_corroborated,
             properties['addr:street'] AS addr_street,
             properties['addr:housenumber'] AS addr_housenumber,
             properties['addr:postcode'] AS addr_postcode,
@@ -140,7 +163,9 @@ CREATE OR REPLACE TEMP VIEW places_export AS
                 f.man_made, f.emergency,
                 f.highway, f.landuse,
                 f.sport, f.building,
-                f.natural_feature
+                f.natural_feature,
+                f.company,
+                f.is_corroborated
             ) AS main_category
         FROM raw_features f
     ),
@@ -152,7 +177,8 @@ CREATE OR REPLACE TEMP VIEW places_export AS
                 c.amenity, c.shop, c.tourism, c.leisure, c.office,
                 c.craft, c.healthcare, c.historic, c.highway,
                 c.cuisine, c.sport, c.landuse, c.building,
-                c.natural_feature
+                c.natural_feature,
+                c.company
             ) AS alternate_categories
         FROM categorized c
     ),
@@ -227,6 +253,7 @@ CREATE OR REPLACE TEMP VIEW places_export AS
         wheelchair,
         payment_methods,
         level,
+        ele,
         operator,
         delivery,
         takeaway,

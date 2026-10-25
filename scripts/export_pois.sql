@@ -116,7 +116,7 @@ parent_candidates AS (
                 member_id
         ) AS rank
     FROM member_parsed
-    WHERE member_role NOT IN ('entrance', 'exit', 'entry', 'access')
+    WHERE member_role IS NULL OR member_role NOT IN ('entrance', 'exit', 'entry', 'access')
 ),
 primary_parent AS (
     SELECT relation_id, candidate_parent_id 
