@@ -317,7 +317,8 @@ INSERT INTO test_cases (test_id, expected_category, "natural") VALUES
     ('TC108-Natural-Water', 'water_feature', 'water'),
     ('TC109-Natural-Spring', 'water_feature', 'spring'),
     ('TC110-Natural-Waterfall', 'waterfall', 'waterfall'),
-    ('TC111-Natural-Cliff', 'land_feature', 'cliff');
+    ('TC111-Natural-Cliff', 'land_feature', 'cliff'),
+    ('TC111b-Natural-Gorge', 'canyon', 'gorge');
 
 INSERT INTO test_cases (test_id, expected_category, historic) VALUES
     ('TC112-Historic-Monument', 'monument', 'monument'),

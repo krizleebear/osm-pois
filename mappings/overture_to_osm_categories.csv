@@ -932,6 +932,7 @@ quay;man_made=quay
 beach;natural=beach
 beach_combing_area;
 canyon;natural=valley
+canyon;natural=gorge
 cave;natural=cave_entrance
 crater;natural=volcano
 desert;natural=desert

@@ -146,9 +146,9 @@ CREATE OR REPLACE TEMP VIEW places_export AS
                 COALESCE(properties['phone'], properties['contact:phone']) IS NOT NULL
             ) AS confidence,
             CASE 
-                WHEN ST_GeometryType(geom) IN ('POLYGON', 'MULTIPOLYGON') 
-                THEN ST_PointOnSurface(geom) 
-                ELSE geom 
+                WHEN ST_GeometryType(geom) = 'POINT' 
+                THEN geom 
+                ELSE ST_PointOnSurface(geom) 
             END AS geometry
         FROM valid_geoms
     ),

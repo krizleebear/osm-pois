@@ -37,7 +37,7 @@ RS_BYTE = 0x1E  # \036 record separator in GeoJSONSeq streams
 
 OSM_EXPORT_ARGS = (
     "export",
-    "--geometry-types=point,polygon",
+    "--geometry-types=point,polygon,line",
     "--attributes=type,id,version,timestamp",
     "--output-format=geojsonseq",
     "-x",
