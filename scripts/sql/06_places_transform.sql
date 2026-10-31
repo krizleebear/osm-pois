@@ -27,6 +27,21 @@ CREATE OR REPLACE TEMP VIEW places_export AS
         WHERE geom IS NOT NULL
           AND ST_IsValid(geom)
           AND is_poi_candidate(properties, ST_GeometryType(geom) IN ('POLYGON', 'MULTIPOLYGON'))
+          -- Filter duplicate closed line rings emitted by osmium export (already emitted as Polygon)
+          AND NOT (
+              CASE 
+                  WHEN ST_GeometryType(geom) IN ('LINESTRING', 'MULTILINESTRING') 
+                  THEN ST_IsClosed(geom) 
+                  ELSE FALSE 
+              END
+          )
+          -- Linear features (LineString) must be explicitly named/branded landmarks (e.g. gorges, canyons, piers)
+          -- and never unnamed utility infrastructure (e.g. curbside street-parking lines)
+          AND (
+              ST_GeometryType(geom) NOT IN ('LINESTRING', 'MULTILINESTRING')
+              OR properties['name'] IS NOT NULL
+              OR properties['brand'] IS NOT NULL
+          )
     ),
     raw_features AS (
         SELECT 
