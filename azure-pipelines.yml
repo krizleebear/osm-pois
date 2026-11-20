@@ -71,6 +71,9 @@ stages:
           echo "[INFO] Validating azure-pipelines.yml syntax..."
           python3 -c "import yaml; yaml.safe_load(open('azure-pipelines.yml'))"
           echo "[OK] azure-pipelines.yml syntax is valid."
+          echo "[INFO] Running pipeline matrix & canonical URL invariants..."
+          python3 -m unittest tests/test_pipeline_matrix.py
+          echo "[OK] Pipeline matrix & URL invariants passed."
 
     - task: Bash@3
       displayName: 'Verify image pull (GHCR primary, mirror.gcr.io fallback)'

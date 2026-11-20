@@ -95,6 +95,11 @@ if [ -f "$REPO_ROOT/azure-pipelines.yml" ]; then
     echo "=== [OK] Touchstone DE Pipeline Architecture & Buffer Limits Verified ==="
 fi
 
+if [ -f "$SCRIPT_DIR/test_pipeline_matrix.py" ]; then
+    python3 -m unittest "$SCRIPT_DIR/test_pipeline_matrix.py"
+    echo "=== [OK] Pipeline Matrix & Canonical Geofabrik URL Invariants Verified ==="
+fi
+
 # Verify Web Viewer Contract Integrity
 if [ -f "$REPO_ROOT/viewer/index.html" ]; then
     REQUIRED_VIEWER_TOKENS=(
