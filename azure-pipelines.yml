@@ -229,6 +229,10 @@ stages:
           OSM_REGION: 'andorra'
           PBF_URL: 'https://download.geofabrik.de/europe/andorra-latest.osm.pbf'
           COUNTRY_CODE: 'AD'
+        azores:
+          OSM_REGION: 'azores'
+          PBF_URL: 'https://download.geofabrik.de/europe/azores-latest.osm.pbf'
+          COUNTRY_CODE: 'PT'
         belarus:
           OSM_REGION: 'belarus'
           PBF_URL: 'https://download.geofabrik.de/europe/belarus-latest.osm.pbf'
@@ -670,6 +674,10 @@ stages:
           OSM_REGION: 'china'
           PBF_URL: 'https://download.geofabrik.de/asia/china-latest.osm.pbf'
           COUNTRY_CODE: 'CN'
+        east-timor:
+          OSM_REGION: 'east-timor'
+          PBF_URL: 'https://download.geofabrik.de/asia/east-timor/east-timor-latest.osm.pbf'
+          COUNTRY_CODE: 'TL'
         gcc-states:
           OSM_REGION: 'gcc-states'
           PBF_URL: 'https://download.geofabrik.de/asia/gcc-states-latest.osm.pbf'
@@ -794,10 +802,30 @@ stages:
           OSM_REGION: 'australia'
           PBF_URL: 'https://download.geofabrik.de/australia-oceania/australia-latest.osm.pbf'
           COUNTRY_CODE: 'AU'
+        cook-islands:
+          OSM_REGION: 'cook-islands'
+          PBF_URL: 'https://download.geofabrik.de/australia-oceania/cook-islands/cook-islands-latest.osm.pbf'
+          COUNTRY_CODE: 'CK'
         fiji:
           OSM_REGION: 'fiji'
           PBF_URL: 'https://download.geofabrik.de/australia-oceania/fiji-latest.osm.pbf'
           COUNTRY_CODE: 'FJ'
+        kiribati:
+          OSM_REGION: 'kiribati'
+          PBF_URL: 'https://download.geofabrik.de/australia-oceania/kiribati/kiribati-latest.osm.pbf'
+          COUNTRY_CODE: 'KI'
+        marshall-islands:
+          OSM_REGION: 'marshall-islands'
+          PBF_URL: 'https://download.geofabrik.de/australia-oceania/marshall-islands/marshall-islands-latest.osm.pbf'
+          COUNTRY_CODE: 'MH'
+        micronesia:
+          OSM_REGION: 'micronesia'
+          PBF_URL: 'https://download.geofabrik.de/australia-oceania/micronesia/micronesia-latest.osm.pbf'
+          COUNTRY_CODE: 'FM'
+        nauru:
+          OSM_REGION: 'nauru'
+          PBF_URL: 'https://download.geofabrik.de/australia-oceania/nauru/nauru-latest.osm.pbf'
+          COUNTRY_CODE: 'NR'
         new-caledonia:
           OSM_REGION: 'new-caledonia'
           PBF_URL: 'https://download.geofabrik.de/australia-oceania/new-caledonia-latest.osm.pbf'
@@ -806,14 +834,54 @@ stages:
           OSM_REGION: 'new-zealand'
           PBF_URL: 'https://download.geofabrik.de/australia-oceania/new-zealand-latest.osm.pbf'
           COUNTRY_CODE: 'NZ'
+        niue:
+          OSM_REGION: 'niue'
+          PBF_URL: 'https://download.geofabrik.de/australia-oceania/niue/niue-latest.osm.pbf'
+          COUNTRY_CODE: 'NU'
+        palau:
+          OSM_REGION: 'palau'
+          PBF_URL: 'https://download.geofabrik.de/australia-oceania/palau/palau-latest.osm.pbf'
+          COUNTRY_CODE: 'PW'
         papua-new-guinea:
           OSM_REGION: 'papua-new-guinea'
           PBF_URL: 'https://download.geofabrik.de/australia-oceania/papua-new-guinea-latest.osm.pbf'
           COUNTRY_CODE: 'PG'
+        pitcairn-islands:
+          OSM_REGION: 'pitcairn-islands'
+          PBF_URL: 'https://download.geofabrik.de/australia-oceania/pitcairn-islands/pitcairn-islands-latest.osm.pbf'
+          COUNTRY_CODE: 'PN'
         polynesie-francaise:
           OSM_REGION: 'polynesie-francaise'
           PBF_URL: 'https://download.geofabrik.de/australia-oceania/polynesie-francaise-latest.osm.pbf'
           COUNTRY_CODE: 'PF'
+        samoa:
+          OSM_REGION: 'samoa'
+          PBF_URL: 'https://download.geofabrik.de/australia-oceania/samoa/samoa-latest.osm.pbf'
+          COUNTRY_CODE: 'WS'
+        solomon-islands:
+          OSM_REGION: 'solomon-islands'
+          PBF_URL: 'https://download.geofabrik.de/australia-oceania/solomon-islands/solomon-islands-latest.osm.pbf'
+          COUNTRY_CODE: 'SB'
+        tokelau:
+          OSM_REGION: 'tokelau'
+          PBF_URL: 'https://download.geofabrik.de/australia-oceania/tokelau/tokelau-latest.osm.pbf'
+          COUNTRY_CODE: 'TK'
+        tonga:
+          OSM_REGION: 'tonga'
+          PBF_URL: 'https://download.geofabrik.de/australia-oceania/tonga/tonga-latest.osm.pbf'
+          COUNTRY_CODE: 'TO'
+        tuvalu:
+          OSM_REGION: 'tuvalu'
+          PBF_URL: 'https://download.geofabrik.de/australia-oceania/tuvalu/tuvalu-latest.osm.pbf'
+          COUNTRY_CODE: 'TV'
+        vanuatu:
+          OSM_REGION: 'vanuatu'
+          PBF_URL: 'https://download.geofabrik.de/australia-oceania/vanuatu/vanuatu-latest.osm.pbf'
+          COUNTRY_CODE: 'VU'
+        wallis-et-futuna:
+          OSM_REGION: 'wallis-et-futuna'
+          PBF_URL: 'https://download.geofabrik.de/australia-oceania/wallis-et-futuna/wallis-et-futuna-latest.osm.pbf'
+          COUNTRY_CODE: 'WF'
         bahamas:
           OSM_REGION: 'bahamas'
           PBF_URL: 'https://download.geofabrik.de/central-america/bahamas-latest.osm.pbf'
@@ -822,10 +890,18 @@ stages:
           OSM_REGION: 'belize'
           PBF_URL: 'https://download.geofabrik.de/central-america/belize-latest.osm.pbf'
           COUNTRY_CODE: 'BZ'
+        costa-rica:
+          OSM_REGION: 'costa-rica'
+          PBF_URL: 'https://download.geofabrik.de/central-america/costa-rica/costa-rica-latest.osm.pbf'
+          COUNTRY_CODE: 'CR'
         cuba:
           OSM_REGION: 'cuba'
           PBF_URL: 'https://download.geofabrik.de/central-america/cuba-latest.osm.pbf'
           COUNTRY_CODE: 'CU'
+        el-salvador:
+          OSM_REGION: 'el-salvador'
+          PBF_URL: 'https://download.geofabrik.de/central-america/el-salvador/el-salvador-latest.osm.pbf'
+          COUNTRY_CODE: 'SV'
         guatemala:
           OSM_REGION: 'guatemala'
           PBF_URL: 'https://download.geofabrik.de/central-america/guatemala-latest.osm.pbf'
@@ -834,6 +910,10 @@ stages:
           OSM_REGION: 'haiti-and-domrep'
           PBF_URL: 'https://download.geofabrik.de/central-america/haiti-and-domrep-latest.osm.pbf'
           COUNTRY_CODE: 'HT'
+        honduras:
+          OSM_REGION: 'honduras'
+          PBF_URL: 'https://download.geofabrik.de/central-america/honduras/honduras-latest.osm.pbf'
+          COUNTRY_CODE: 'HN'
         jamaica:
           OSM_REGION: 'jamaica'
           PBF_URL: 'https://download.geofabrik.de/central-america/jamaica-latest.osm.pbf'
@@ -842,6 +922,10 @@ stages:
           OSM_REGION: 'nicaragua'
           PBF_URL: 'https://download.geofabrik.de/central-america/nicaragua-latest.osm.pbf'
           COUNTRY_CODE: 'NI'
+        panama:
+          OSM_REGION: 'panama'
+          PBF_URL: 'https://download.geofabrik.de/central-america/panama/panama-latest.osm.pbf'
+          COUNTRY_CODE: 'PA'
         canada:
           OSM_REGION: 'canada'
           PBF_URL: 'https://download.geofabrik.de/north-america/canada-latest.osm.pbf'
@@ -854,6 +938,14 @@ stages:
           OSM_REGION: 'mexico'
           PBF_URL: 'https://download.geofabrik.de/north-america/mexico-latest.osm.pbf'
           COUNTRY_CODE: 'MX'
+        puerto-rico:
+          OSM_REGION: 'puerto-rico'
+          PBF_URL: 'https://download.geofabrik.de/north-america/us/puerto-rico/puerto-rico-latest.osm.pbf'
+          COUNTRY_CODE: 'PR'
+        us-virgin-islands:
+          OSM_REGION: 'us-virgin-islands'
+          PBF_URL: 'https://download.geofabrik.de/north-america/us/us-virgin-islands/us-virgin-islands-latest.osm.pbf'
+          COUNTRY_CODE: 'VI'
         argentina:
           OSM_REGION: 'argentina'
           PBF_URL: 'https://download.geofabrik.de/south-america/argentina-latest.osm.pbf'
