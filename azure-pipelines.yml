@@ -332,6 +332,14 @@ stages:
           OSM_REGION: 'isle-of-man'
           PBF_URL: 'https://download.geofabrik.de/europe/isle-of-man/isle-of-man-latest.osm.pbf'
           COUNTRY_CODE: 'IM'
+        guernsey:
+          OSM_REGION: 'guernsey'
+          PBF_URL: ''
+          COUNTRY_CODE: 'GG'
+        jersey:
+          OSM_REGION: 'jersey'
+          PBF_URL: ''
+          COUNTRY_CODE: 'JE'
         italy:
           OSM_REGION: 'italy'
           PBF_URL: 'https://download.geofabrik.de/europe/italy/italy-latest.osm.pbf'
@@ -853,6 +861,18 @@ stages:
           OSM_REGION: 'pitcairn-islands'
           PBF_URL: 'https://download.geofabrik.de/australia-oceania/pitcairn-islands/pitcairn-islands-latest.osm.pbf'
           COUNTRY_CODE: 'PN'
+        american-samoa:
+          OSM_REGION: 'american-samoa'
+          PBF_URL: ''
+          COUNTRY_CODE: 'AS'
+        guam:
+          OSM_REGION: 'guam'
+          PBF_URL: ''
+          COUNTRY_CODE: 'GU'
+        northern-mariana-islands:
+          OSM_REGION: 'northern-mariana-islands'
+          PBF_URL: ''
+          COUNTRY_CODE: 'MP'
         polynesie-francaise:
           OSM_REGION: 'polynesie-francaise'
           PBF_URL: 'https://download.geofabrik.de/australia-oceania/polynesie-francaise/polynesie-francaise-latest.osm.pbf'
@@ -921,6 +941,78 @@ stages:
           OSM_REGION: 'jamaica'
           PBF_URL: 'https://download.geofabrik.de/central-america/jamaica/jamaica-latest.osm.pbf'
           COUNTRY_CODE: 'JM'
+        anguilla:
+          OSM_REGION: 'anguilla'
+          PBF_URL: ''
+          COUNTRY_CODE: 'AI'
+        antigua-and-barbuda:
+          OSM_REGION: 'antigua-and-barbuda'
+          PBF_URL: ''
+          COUNTRY_CODE: 'AG'
+        aruba:
+          OSM_REGION: 'aruba'
+          PBF_URL: ''
+          COUNTRY_CODE: 'AW'
+        barbados:
+          OSM_REGION: 'barbados'
+          PBF_URL: ''
+          COUNTRY_CODE: 'BB'
+        british-virgin-islands:
+          OSM_REGION: 'british-virgin-islands'
+          PBF_URL: ''
+          COUNTRY_CODE: 'VG'
+        cayman-islands:
+          OSM_REGION: 'cayman-islands'
+          PBF_URL: ''
+          COUNTRY_CODE: 'KY'
+        curacao:
+          OSM_REGION: 'curacao'
+          PBF_URL: ''
+          COUNTRY_CODE: 'CW'
+        dominica:
+          OSM_REGION: 'dominica'
+          PBF_URL: ''
+          COUNTRY_CODE: 'DM'
+        grenada:
+          OSM_REGION: 'grenada'
+          PBF_URL: ''
+          COUNTRY_CODE: 'GD'
+        montserrat:
+          OSM_REGION: 'montserrat'
+          PBF_URL: ''
+          COUNTRY_CODE: 'MS'
+        saint-barthelemy:
+          OSM_REGION: 'saint-barthelemy'
+          PBF_URL: ''
+          COUNTRY_CODE: 'BL'
+        saint-kitts-and-nevis:
+          OSM_REGION: 'saint-kitts-and-nevis'
+          PBF_URL: ''
+          COUNTRY_CODE: 'KN'
+        saint-lucia:
+          OSM_REGION: 'saint-lucia'
+          PBF_URL: ''
+          COUNTRY_CODE: 'LC'
+        saint-martin:
+          OSM_REGION: 'saint-martin'
+          PBF_URL: ''
+          COUNTRY_CODE: 'MF'
+        saint-vincent-and-the-grenadines:
+          OSM_REGION: 'saint-vincent-and-the-grenadines'
+          PBF_URL: ''
+          COUNTRY_CODE: 'VC'
+        sint-maarten:
+          OSM_REGION: 'sint-maarten'
+          PBF_URL: ''
+          COUNTRY_CODE: 'SX'
+        trinidad-and-tobago:
+          OSM_REGION: 'trinidad-and-tobago'
+          PBF_URL: ''
+          COUNTRY_CODE: 'TT'
+        turks-and-caicos-islands:
+          OSM_REGION: 'turks-and-caicos-islands'
+          PBF_URL: ''
+          COUNTRY_CODE: 'TC'
         nicaragua:
           OSM_REGION: 'nicaragua'
           PBF_URL: 'https://download.geofabrik.de/central-america/nicaragua/nicaragua-latest.osm.pbf'

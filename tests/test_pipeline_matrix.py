@@ -13,10 +13,36 @@ REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 PIPELINE_YAML = os.path.join(REPO_ROOT, "azure-pipelines.yml")
 
 TRIPLE_RE = re.compile(
-    r"OSM_REGION:\s*'([^']+)'\s+PBF_URL:\s*'([^']+)'\s+COUNTRY_CODE:\s*'([^']+)'"
+    r"OSM_REGION:\s*'([^']+)'\s+PBF_URL:\s*'([^']*)'\s+COUNTRY_CODE:\s*'([^']+)'"
 )
-PAIR_RE = re.compile(r"OSM_REGION:\s*'([^']+)'\s+PBF_URL:\s*'([^']+)'")
+PAIR_RE = re.compile(r"OSM_REGION:\s*'([^']+)'\s+PBF_URL:\s*'([^']*)'")
 ANY_GEOFABRIK_URL_RE = re.compile(r"https://download\.geofabrik\.de/[^\s'\"]+")
+
+DERIVED_COMPOSITE_REGIONS = frozenset({
+    "guernsey",
+    "jersey",
+    "american-samoa",
+    "guam",
+    "northern-mariana-islands",
+    "trinidad-and-tobago",
+    "barbados",
+    "antigua-and-barbuda",
+    "dominica",
+    "grenada",
+    "saint-kitts-and-nevis",
+    "saint-lucia",
+    "saint-vincent-and-the-grenadines",
+    "aruba",
+    "curacao",
+    "sint-maarten",
+    "saint-martin",
+    "saint-barthelemy",
+    "cayman-islands",
+    "turks-and-caicos-islands",
+    "british-virgin-islands",
+    "anguilla",
+    "montserrat",
+})
 
 
 class TestPipelineMatrix(unittest.TestCase):
@@ -28,7 +54,7 @@ class TestPipelineMatrix(unittest.TestCase):
 
     def test_touchstones_and_matrix_have_no_duplicate_regions(self):
         regions = [reg for reg, _, _ in self.triples]
-        self.assertGreaterEqual(len(regions), 197)
+        self.assertGreaterEqual(len(regions), 220)
         self.assertEqual(
             len(regions),
             len(set(regions)),
@@ -50,11 +76,23 @@ class TestPipelineMatrix(unittest.TestCase):
         pairs = PAIR_RE.findall(self.pipeline)
         self.assertEqual(len(pairs), len(self.triples))
         self.assertEqual(
-            all_urls - {url for _, url in pairs},
+            all_urls - {url for _, url in pairs if url},
             set(),
             "Found Geofabrik URL outside standard (OSM_REGION, PBF_URL) entries",
         )
         for reg, url in pairs:
+            if url == "":
+                self.assertIn(
+                    reg,
+                    DERIVED_COMPOSITE_REGIONS,
+                    f"Empty PBF_URL is only allowed for derived composite regions, got '{reg}'",
+                )
+                continue
+            self.assertNotIn(
+                reg,
+                DERIVED_COMPOSITE_REGIONS,
+                f"Derived composite region '{reg}' must have empty PBF_URL '', got '{url}'",
+            )
             self.assertTrue(
                 url.startswith("https://download.geofabrik.de/"),
                 f"Invalid Geofabrik URL scheme/host for '{reg}': {url}",
