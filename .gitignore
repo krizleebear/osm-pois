@@ -14,3 +14,9 @@ test_places.parquet
 .vscode/
 .idea/
 .tmp/duckdb_temp_storage*
+.duckdb/
+
+# Python caches
+__pycache__/
+*.py[cod]
+.pytest_cache/
